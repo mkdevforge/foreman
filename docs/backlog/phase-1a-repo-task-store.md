@@ -35,12 +35,11 @@ Implement the first usable repo-scoped orchestration slice: initialize `.foreman
 - Session, review, catalog, and hook behavior.
 - Jira, Linear, or GitHub API imports.
 
-## Decision Gates
+## Resolved Decisions
 
-Close these before implementation starts:
-
-- Optional YAML field representation: decide whether absent `source_ref` and `description` are omitted, written as `null`, or written as empty strings. JSON output must still expose explicit nullable fields.
-- Task and chunk identifier rules: decide exact accepted character sets for task IDs and chunk slugs while still rejecting path traversal and empty IDs.
+- Optional YAML field representation: absent `source_ref` and `description` are written as explicit YAML `null`. JSON output must expose explicit nullable fields.
+- Task ID rules: task IDs match `[A-Za-z0-9][A-Za-z0-9._-]*`, preserve case, and are used as file names.
+- Chunk ID rules: chunk IDs match `[a-z0-9][a-z0-9-]*` and are unique within a task.
 
 ## Implementation Notes
 
@@ -49,8 +48,9 @@ Close these before implementation starts:
 - `foreman init` creates `.foreman/tasks/` at the repo root and a small `.foreman/README.md`; it should not create sample tasks.
 - Do not add `.foreman/` to `.gitignore`; the PRD says task files are commit-friendly.
 - Use ISO 8601 UTC timestamps.
-- Task IDs are file names. At minimum, reject path separators, `.` path segments, and empty IDs.
-- Chunk IDs are slugs unique within a task. Keep validation small and document the accepted character set in tests.
+- Task IDs are file names. Reject anything that does not match `[A-Za-z0-9][A-Za-z0-9._-]*`.
+- Chunk IDs are slugs unique within a task. Reject anything that does not match `[a-z0-9][a-z0-9-]*`.
+- Omitted `--source-ref` and `--description` are written as explicit YAML `null`.
 - Default new task status to `todo`.
 - Default new chunk status to `todo` and stage to `discovery`.
 - `--description` is a plain string. No editor, stdin, or markdown file support in this phase.
@@ -69,6 +69,7 @@ The phase is complete when automated tests cover:
 - Creating `.foreman/tasks/` and `.foreman/README.md`.
 - Adding a task and reading the YAML back.
 - Rejecting invalid task IDs.
+- Writing omitted optional task fields as explicit YAML `null`.
 - Updating task status.
 - Adding a chunk with a spec file.
 - Rejecting duplicate chunk IDs.
