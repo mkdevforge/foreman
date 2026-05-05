@@ -2,13 +2,13 @@
 
 ## Goal
 
-Create the minimal Bun + TypeScript project structure that every later phase can build on. This phase should not implement Foreman domain behavior beyond command dispatch, output mode plumbing, and shared utilities needed by following phases.
+Create the smallest Bun + TypeScript foundation that proves Foreman's command entry points, build, tests, and output envelope. This phase should avoid domain behavior and avoid scaffolding files that do not contain real implementation.
 
 ## Scope
 
 - Add `package.json`, `tsconfig.json`, and `bunfig.toml`.
-- Add the PRD project layout under `src/` and `tests/`.
-- Define executable entry points for:
+- Add only the source and test files needed for this phase.
+- Define runnable package `bin` entry points for:
   - `foreman`
   - `foreman-hook-stop-claude-code`
   - `foreman-hook-stop-codex`
@@ -16,23 +16,27 @@ Create the minimal Bun + TypeScript project structure that every later phase can
   - global `--help`
   - global `--json`
   - stable unknown-command and invalid-argument exit handling
+- Implement hook entry stubs with predictable help or not-implemented behavior.
 - Add shared output primitives for text and JSON responses.
 - Add shared error types that preserve the PRD exit-code rules.
-- Add test harness setup and at least one CLI dispatch test.
+- Add test harness setup and focused dispatch/output tests.
 
 ## Out of Scope
 
 - Real task YAML behavior.
 - Real SQLite schema.
 - Real hook parsing or installation.
+- Full PRD directory skeleton.
 - Network calls to AI summary providers.
+- Provider SDK dependencies.
 
 ## Implementation Notes
 
-- Keep dependencies aligned with the PRD: Bun, TypeScript, `bun:sqlite`, `yaml`, `@anthropic-ai/sdk`, and `openai` when first needed.
-- Delay provider SDK installation until a phase actually uses it unless doing so simplifies build setup without adding runtime behavior.
-- Prefer plain TypeScript modules over a CLI framework unless a framework is proven necessary.
-- JSON responses must include `schema_version: 1` from the start, even for placeholder responses.
+- Keep dependencies minimal. Add runtime dependencies only in the phase that uses them.
+- Use a small first-party argument parser unless real command complexity proves a dependency is worth it.
+- Treat `bun run build` as type-checking plus any lightweight validation needed for script distribution. Compiled binary distribution is not part of v0 Phase 0.
+- JSON responses and JSON-formatted errors must include `schema_version: 1`.
+- Text output must avoid ANSI colors from the start.
 
 ## Test Checkpoint
 
@@ -42,8 +46,10 @@ The phase is complete when these pass:
 bun install
 bun run build
 bun test
-bun run src/cli/index.ts --help
-bun run src/cli/index.ts unknown-command
+bun run foreman --help
+bun run foreman --json unknown-command
+bun run foreman-hook-stop-claude-code --help
+bun run foreman-hook-stop-codex --help
 ```
 
 Expected behavior:
@@ -52,6 +58,8 @@ Expected behavior:
 - Tests pass.
 - `--help` exits `0`.
 - Unknown command exits `2` with usage-oriented output.
+- Unknown command with `--json` exits `2` with valid JSON.
+- Hook stubs are runnable and do not ingest, install, or write files.
 - No domain files are created in `.foreman/` or `~/.foreman/`.
 
 ## Done Criteria
