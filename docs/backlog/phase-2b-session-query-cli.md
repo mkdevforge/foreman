@@ -34,11 +34,9 @@ Add read-only session CLI commands over the Phase 2a SQLite schema. This phase u
 - `foreman session cost`.
 - Review and catalog commands.
 
-## Decision Gates
+## Resolved Decisions
 
-Close these before implementation starts:
-
-- Duration filter syntax: decide the accepted syntax for `--since <duration>`.
+- Duration filter syntax: `--since` accepts compact relative durations with units `m`, `h`, `d`, and `w`, such as `30m`, `24h`, `7d`, or `2w`.
 
 ## Implementation Notes
 
@@ -47,7 +45,8 @@ Close these before implementation starts:
 - `session last` sorts by `started_at DESC`, with a deterministic tie-breaker.
 - `--full` includes prompts and tool calls; default output should include enough metadata, usage, summary, and linked chunks to be useful without dumping every event.
 - `--unattached` means sessions with no rows in `session_chunks`.
-- `--since` accepts only the syntax recorded in the decision gate; keep parsing minimal and tested.
+- `--since` accepts only compact relative durations: `m` for minutes, `h` for hours, `d` for days, and `w` for weeks.
+- Absolute timestamps are out of scope for Phase 2b.
 - JSON output must include `schema_version: 1`, snake_case keys, full UUIDs, ISO 8601 timestamps, and explicit nullable fields.
 - Text output must avoid ANSI colors and relative timestamps.
 
@@ -60,7 +59,8 @@ The phase is complete when automated tests cover:
 - Filtering sessions by project.
 - Filtering sessions by source.
 - Filtering unattached sessions.
-- Filtering by `--since`.
+- Filtering by `--since` with `m`, `h`, `d`, and `w` units.
+- Rejecting invalid `--since` values.
 - Showing sessions by full ID.
 - Showing sessions by unique prefix.
 - Ambiguous prefix errors with candidates and exit `1`.

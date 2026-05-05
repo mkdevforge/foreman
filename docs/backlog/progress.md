@@ -39,7 +39,7 @@ Track implementation-blocking decisions here. Close each decision before impleme
 | Optional task YAML field representation | Phase 1a | Closed 2026-05-05 | Write absent `source_ref` and `description` as explicit YAML `null`; JSON output exposes explicit nullable fields. |
 | Task and chunk identifier rules | Phase 1a | Closed 2026-05-05 | Task IDs match `[A-Za-z0-9][A-Za-z0-9._-]*` and preserve case; chunk IDs match `[a-z0-9][a-z0-9-]*`. |
 | Note author fallback | Phase 1b | Closed 2026-05-05 | `chunk note` uses `git config user.email` by default, allows `--author <email>`, and errors if neither is available. |
-| Duration filter syntax | Phase 2b | Open | Decide the accepted syntax for `--since <duration>` before implementing session filters. |
+| Duration filter syntax | Phase 2b | Closed 2026-05-05 | `--since` accepts compact relative durations with units `m`, `h`, `d`, and `w`, such as `30m`, `24h`, `7d`, or `2w`. |
 | Summary provider for v0 | Phase 3 | Open | PRD recommends Anthropic Haiku for all summaries, but implementation should record the final choice before coding provider bindings. |
 | Codex hook config location | Phase 4 | Open | PRD requires checking current Codex hook docs at implementation time and choosing one consistent config format. |
 | Summary truncation strategy details | Phase 3 | Open | PRD recommends head + tail with an elision marker and an approximate 50k-token cap. |
