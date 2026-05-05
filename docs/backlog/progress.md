@@ -16,7 +16,8 @@ This tracker is the single status file for the v0 backlog. Update it whenever a 
 | Phase | File | Status | Checkpoint |
 | --- | --- | --- | --- |
 | 0 | [Project foundation](phase-0-project-foundation.md) | Not started | Bun/TypeScript project builds, tests run, CLI dispatch exists. |
-| 1 | [Repo task management](phase-1-repo-task-management.md) | Not started | `.foreman/tasks/*.yaml` can be created, edited, listed, and round-tripped. |
+| 1a | [Repo task store](phase-1a-repo-task-store.md) | Not started | `.foreman/tasks/*.yaml` can be initialized, created, listed, and shown. |
+| 1b | [Chunk lifecycle](phase-1b-chunk-lifecycle.md) | Not started | Chunks can change status/stage and append review notes. |
 | 2 | [Session database](phase-2-session-database.md) | Not started | SQLite schema, migrations, and seeded session reads work. |
 | 3 | [Transcript ingestion](phase-3-transcript-ingestion.md) | Not started | Claude Code and Codex fixture transcripts ingest idempotently with mocked summaries. |
 | 4 | [Hooks and active linkage](phase-4-hooks-active-linkage.md) | Not started | Stop hooks install idempotently, never block on errors, and link active chunks. |
@@ -29,6 +30,9 @@ These are unresolved by the backlog itself. Record the chosen answer here before
 
 | Decision | Needed By | Status | Notes |
 | --- | --- | --- | --- |
+| Optional task YAML field representation | Phase 1a | Open | Decide whether absent `source_ref` and `description` are omitted, written as `null`, or written as empty strings. JSON output still exposes explicit nullable fields. |
+| Task and chunk identifier rules | Phase 1a | Open | Decide exact accepted character sets for task IDs and chunk slugs while still rejecting path traversal and empty IDs. |
+| Note author fallback | Phase 1b | Open | Decide whether missing `git config user.email` is a hard error or whether Foreman allows an explicit CLI/env override. |
 | Summary provider for v0 | Phase 3 | Open | PRD recommends Anthropic Haiku for all summaries, but implementation should record the final choice before coding provider bindings. |
 | Codex hook config location | Phase 4 | Open | PRD requires checking current Codex hook docs at implementation time and choosing one consistent config format. |
 | Summary truncation strategy details | Phase 3 | Open | PRD recommends head + tail with an elision marker and an approximate 50k-token cap. |
@@ -42,17 +46,17 @@ These are unresolved by the backlog itself. Record the chosen answer here before
 | --- | --- | --- |
 | 1. `bun install && bun run build` produces working hook + CLI scripts. | Phases 0, 6 | Not started |
 | 2. `foreman install` registers Claude Code and Codex Stop hooks idempotently. | Phases 4, 6 | Not started |
-| 3. `foreman init` creates `.foreman/` in the current repo. | Phase 1 | Not started |
-| 4. `task add` and `chunk add` create well-formed YAML that round-trips. | Phase 1 | Not started |
+| 3. `foreman init` creates `.foreman/` in the current repo. | Phase 1a | Not started |
+| 4. `task add` and `chunk add` create well-formed YAML that round-trips. | Phase 1a | Not started |
 | 5. Claude Code Stop hook ingests and links an active chunk. | Phases 3, 4, 6 | Not started |
 | 6. Codex Stop hook ingests and links an active chunk. | Phases 3, 4, 6 | Not started |
 | 7. `foreman review <task>/<chunk>` shows chunk metadata plus linked sessions. | Phase 5 | Not started |
 | 8. `foreman catalog` lists unattached sessions and supports interactive linking. | Phase 5 | Not started |
 | 9. `foreman session cost --by source` reports a correct source breakdown. | Phase 5 | Not started |
-| 10. All commands have valid `--json` mode. | Phases 0, 1, 2, 5, 6 | Not started |
+| 10. All commands have valid `--json` mode. | Phases 0, 1a, 1b, 2, 5, 6 | Not started |
 | 11. Re-running hooks does not duplicate stored rows or links. | Phases 3, 4 | Not started |
 | 12. Hooks log failures and exit 0. | Phase 4 | Not started |
-| 13. Basic test suite covers parsers, migrations, dedup, soft linkage, catalog flow, and output shape. | Phases 1-6 | Not started |
+| 13. Basic test suite covers parsers, migrations, dedup, soft linkage, catalog flow, and output shape. | Phases 1a, 1b, 2-6 | Not started |
 
 ## Maintenance Rules
 
