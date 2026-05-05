@@ -34,6 +34,14 @@ Create the smallest Bun + TypeScript foundation that proves Foreman's command en
 
 - Keep dependencies minimal. Add runtime dependencies only in the phase that uses them.
 - Use a small first-party argument parser unless real command complexity proves a dependency is worth it.
+- Argument parsing stance for v0:
+  - global flags are accepted in any position
+  - global flags are limited to `--help`, `-h`, and `--json`
+  - command paths are positional words, such as `task add` or `session list`
+  - command handlers own command-specific flag validation
+  - supported flag forms are `--flag`, `--key value`, and `--key=value`
+  - unsupported forms include combined short flags like `-abc` and short aliases other than `-h`
+  - the parser should not perform implicit type coercion beyond returning strings, booleans, and positionals
 - Treat `bun run build` as type-checking plus any lightweight validation needed for script distribution. Compiled binary distribution is not part of v0 Phase 0.
 - JSON responses and JSON-formatted errors must include `schema_version: 1`.
 - Text output must avoid ANSI colors from the start.
@@ -58,6 +66,7 @@ Expected behavior:
 - Tests pass.
 - `--help` exits `0`.
 - Unknown command exits `2` with usage-oriented output.
+- Global flags work before and after the command path.
 - Unknown command with `--json` exits `2` with valid JSON.
 - Hook stubs are runnable and do not ingest, install, or write files.
 - No domain files are created in `.foreman/` or `~/.foreman/`.
