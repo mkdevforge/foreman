@@ -33,15 +33,15 @@ Create the smallest Bun + TypeScript foundation that proves Foreman's command en
 ## Implementation Notes
 
 - Keep dependencies minimal. Add runtime dependencies only in the phase that uses them.
-- Use a small first-party argument parser unless real command complexity proves a dependency is worth it.
+- Use Commander for command routing and option parsing.
 - Argument parsing stance for v0:
   - global flags are accepted in any position
   - global flags are limited to `--help`, `-h`, and `--json`
-  - command paths are positional words, such as `task add` or `session list`
+  - command paths are Commander subcommands, such as `task add` or `session list`
   - command handlers own command-specific flag validation
-  - supported flag forms are `--flag`, `--key value`, and `--key=value`
-  - unsupported forms include combined short flags like `-abc` and short aliases other than `-h`
-  - the parser should not perform implicit type coercion beyond returning strings, booleans, and positionals
+  - Foreman-owned wrappers control output formatting, JSON error envelopes, and exit-code policy
+  - if Commander does not handle required global flag placement cleanly, use a tiny pre-pass for global flags instead of writing a full parser
+  - do not add parser behavior not needed by v0
 - Treat `bun run build` as type-checking plus any lightweight validation needed for script distribution. Compiled binary distribution is not part of v0 Phase 0.
 - JSON responses and JSON-formatted errors must include `schema_version: 1`.
 - Text output must avoid ANSI colors from the start.
