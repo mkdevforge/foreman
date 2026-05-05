@@ -1,5 +1,7 @@
 # Phase 3: Transcript Ingestion
 
+Backlog review: Unreviewed. Review this phase before implementation starts.
+
 ## Goal
 
 Implement source-specific transcript parsing and common ingestion so Claude Code and Codex sessions can be stored idempotently in SQLite. Summary generation should be wired through a provider boundary and mocked in tests.

@@ -11,18 +11,24 @@ This tracker is the single status file for the v0 backlog. Update it whenever a 
 - `Blocked`: Work cannot continue without a decision or dependency.
 - `Done`: The phase checkpoint passed and the result is committed.
 
+## Backlog Review Legend
+
+- `Reviewed`: The backlog slice has been discussed and is ready to implement after any listed decision gates are closed.
+- `Unreviewed`: The backlog slice still needs a planning review before implementation starts.
+
 ## Phase Progress
 
-| Phase | File | Status | Checkpoint |
-| --- | --- | --- | --- |
-| 0 | [Project foundation](phase-0-project-foundation.md) | Not started | Bun/TypeScript project builds, tests run, CLI dispatch exists. |
-| 1a | [Repo task store](phase-1a-repo-task-store.md) | Not started | `.foreman/tasks/*.yaml` can be initialized, created, listed, and shown. |
-| 1b | [Chunk lifecycle](phase-1b-chunk-lifecycle.md) | Not started | Chunks can change status/stage and append review notes. |
-| 2 | [Session database](phase-2-session-database.md) | Not started | SQLite schema, migrations, and seeded session reads work. |
-| 3 | [Transcript ingestion](phase-3-transcript-ingestion.md) | Not started | Claude Code and Codex fixture transcripts ingest idempotently with mocked summaries. |
-| 4 | [Hooks and active linkage](phase-4-hooks-active-linkage.md) | Not started | Stop hooks install idempotently, never block on errors, and link active chunks. |
-| 5 | [Review and catalog CLI](phase-5-review-catalog-cli.md) | Not started | Review, catalog, and session cost commands join repo YAML with session DB. |
-| 6 | [v0 hardening](phase-6-v0-hardening.md) | Not started | All v0 acceptance criteria pass in automated and manual end-to-end checks. |
+| Phase | File | Status | Backlog review | Checkpoint |
+| --- | --- | --- | --- | --- |
+| 0 | [Project foundation](phase-0-project-foundation.md) | Not started | Reviewed | Bun/TypeScript project builds, tests run, CLI dispatch exists. |
+| 1a | [Repo task store](phase-1a-repo-task-store.md) | Not started | Reviewed | `.foreman/tasks/*.yaml` can be initialized, created, listed, and shown. |
+| 1b | [Chunk lifecycle](phase-1b-chunk-lifecycle.md) | Not started | Reviewed | Chunks can change status/stage and append review notes. |
+| 2a | [SQLite schema](phase-2a-sqlite-schema.md) | Not started | Reviewed | SQLite schema, migrations, indexes, and constraints work. |
+| 2b | [Session query CLI](phase-2b-session-query-cli.md) | Not started | Reviewed | Seeded session data can be listed, shown, filtered, and resolved by prefix. |
+| 3 | [Transcript ingestion](phase-3-transcript-ingestion.md) | Not started | Unreviewed | Claude Code and Codex fixture transcripts ingest idempotently with mocked summaries. |
+| 4 | [Hooks and active linkage](phase-4-hooks-active-linkage.md) | Not started | Unreviewed | Stop hooks install idempotently, never block on errors, and link active chunks. |
+| 5 | [Review and catalog CLI](phase-5-review-catalog-cli.md) | Not started | Unreviewed | Review, catalog, and session cost commands join repo YAML with session DB. |
+| 6 | [v0 hardening](phase-6-v0-hardening.md) | Not started | Unreviewed | All v0 acceptance criteria pass in automated and manual end-to-end checks. |
 
 ## Decision Gates
 
@@ -33,6 +39,7 @@ Track implementation-blocking decisions here. Close each decision before impleme
 | Optional task YAML field representation | Phase 1a | Closed 2026-05-05 | Write absent `source_ref` and `description` as explicit YAML `null`; JSON output exposes explicit nullable fields. |
 | Task and chunk identifier rules | Phase 1a | Closed 2026-05-05 | Task IDs match `[A-Za-z0-9][A-Za-z0-9._-]*` and preserve case; chunk IDs match `[a-z0-9][a-z0-9-]*`. |
 | Note author fallback | Phase 1b | Closed 2026-05-05 | `chunk note` uses `git config user.email` by default, allows `--author <email>`, and errors if neither is available. |
+| Duration filter syntax | Phase 2b | Open | Decide the accepted syntax for `--since <duration>` before implementing session filters. |
 | Summary provider for v0 | Phase 3 | Open | PRD recommends Anthropic Haiku for all summaries, but implementation should record the final choice before coding provider bindings. |
 | Codex hook config location | Phase 4 | Open | PRD requires checking current Codex hook docs at implementation time and choosing one consistent config format. |
 | Summary truncation strategy details | Phase 3 | Open | PRD recommends head + tail with an elision marker and an approximate 50k-token cap. |
@@ -53,10 +60,10 @@ Track implementation-blocking decisions here. Close each decision before impleme
 | 7. `foreman review <task>/<chunk>` shows chunk metadata plus linked sessions. | Phase 5 | Not started |
 | 8. `foreman catalog` lists unattached sessions and supports interactive linking. | Phase 5 | Not started |
 | 9. `foreman session cost --by source` reports a correct source breakdown. | Phase 5 | Not started |
-| 10. All commands have valid `--json` mode. | Phases 0, 1a, 1b, 2, 5, 6 | Not started |
+| 10. All commands have valid `--json` mode. | Phases 0, 1a, 1b, 2b, 5, 6 | Not started |
 | 11. Re-running hooks does not duplicate stored rows or links. | Phases 3, 4 | Not started |
 | 12. Hooks log failures and exit 0. | Phase 4 | Not started |
-| 13. Basic test suite covers parsers, migrations, dedup, soft linkage, catalog flow, and output shape. | Phases 1a, 1b, 2-6 | Not started |
+| 13. Basic test suite covers parsers, migrations, dedup, soft linkage, catalog flow, and output shape. | Phases 1a, 1b, 2a, 2b, 3-6 | Not started |
 
 ## Maintenance Rules
 

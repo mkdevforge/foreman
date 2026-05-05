@@ -1,5 +1,7 @@
 # Phase 5: Review and Catalog CLI
 
+Backlog review: Unreviewed. Review this phase before implementation starts.
+
 ## Goal
 
 Implement the supervisor-facing commands that join repo-scoped task YAML with user-scoped session capture. By the end of this phase, Foreman can review chunk work, retroactively link sessions, and report costs.

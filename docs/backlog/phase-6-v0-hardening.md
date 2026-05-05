@@ -1,5 +1,7 @@
 # Phase 6: v0 Hardening
 
+Backlog review: Unreviewed. Review this phase before implementation starts.
+
 ## Goal
 
 Close the gap between feature-complete implementation and the PRD's v0 acceptance criteria. This phase is for integration tests, documentation, manual end-to-end verification, and any small fixes required to make Foreman reliable on a clean machine.

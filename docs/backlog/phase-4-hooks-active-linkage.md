@@ -1,5 +1,7 @@
 # Phase 4: Hooks and Active Linkage
 
+Backlog review: Unreviewed. Review this phase before implementation starts.
+
 ## Goal
 
 Connect ingestion to real Stop hook entry points and the soft active-context file. By the end of this phase, Claude Code and Codex Stop hooks can ingest sessions, log failures without blocking, and link sessions to active chunks when the project path matches.
