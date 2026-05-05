@@ -1,0 +1,22 @@
+{
+  "name": "foreman",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "foreman": "./foreman",
+    "foreman-hook-stop-claude-code": "./foreman-hook-stop-claude-code",
+    "foreman-hook-stop-codex": "./foreman-hook-stop-codex"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "commander": "^14.0.3"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.2",
+    "typescript": "^5.9.3"
+  }
+}

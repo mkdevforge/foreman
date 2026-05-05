@@ -1,0 +1,27 @@
+import type { CliError } from "./errors";
+
+export interface JsonErrorResponse {
+  schema_version: 1;
+  error: {
+    code: string;
+    message: string;
+    exit_code: number;
+  };
+}
+
+export function renderTextError(error: CliError): string {
+  return `error: ${error.message}\n`;
+}
+
+export function formatJsonError(error: CliError): string {
+  const response: JsonErrorResponse = {
+    schema_version: 1,
+    error: {
+      code: error.code,
+      message: error.message,
+      exit_code: error.exitCode
+    }
+  };
+
+  return `${JSON.stringify(response, null, 2)}\n`;
+}

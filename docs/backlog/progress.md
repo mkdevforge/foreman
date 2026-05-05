@@ -20,7 +20,7 @@ This tracker is the single status file for the v0 backlog. Update it whenever a 
 
 | Phase | File | Status | Backlog review | Checkpoint |
 | --- | --- | --- | --- | --- |
-| 0 | [Project foundation](phase-0-project-foundation.md) | Not started | Reviewed | Bun/TypeScript project builds, tests run, CLI dispatch exists. |
+| 0 | [Project foundation](phase-0-project-foundation.md) | Done | Reviewed | Bun/TypeScript project builds, tests run, CLI dispatch exists. |
 | 1a | [Repo task store](phase-1a-repo-task-store.md) | Not started | Reviewed | `.foreman/tasks/*.yaml` can be initialized, created, listed, and shown. |
 | 1b | [Chunk lifecycle](phase-1b-chunk-lifecycle.md) | Not started | Reviewed | Chunks can change status/stage and append review notes. |
 | 2a | [SQLite schema](phase-2a-sqlite-schema.md) | Not started | Reviewed | SQLite schema, migrations, indexes, and constraints work. |
