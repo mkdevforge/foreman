@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
+import { fileURLToPath } from "node:url";
 import { runForemanCli } from "../src/cli/runtime";
 import { runHookStub } from "../src/hook/runtime";
+
+const repoRoot = fileURLToPath(new URL("../", import.meta.url));
+const decoder = new TextDecoder();
 
 function runCli(argv: string[]) {
   let stdout = "";
@@ -30,6 +34,29 @@ function runHook(argv: string[], name: "foreman-hook-stop-claude-code" | "forema
   });
 
   return { ...result, stdout, stderr };
+}
+
+function runPackageBin(argv: string[]) {
+  const result = Bun.spawnSync({
+    cmd: [process.execPath, "run", ...argv],
+    cwd: repoRoot,
+    stdout: "pipe",
+    stderr: "pipe"
+  });
+
+  return {
+    exitCode: result.exitCode,
+    stdout: decodeOutput(result.stdout),
+    stderr: decodeOutput(result.stderr)
+  };
+}
+
+function decodeOutput(output: string | Uint8Array | null | undefined): string {
+  if (!output) {
+    return "";
+  }
+
+  return typeof output === "string" ? output : decoder.decode(output);
 }
 
 describe("foreman CLI foundation", () => {
@@ -68,6 +95,39 @@ describe("foreman CLI foundation", () => {
     expect(parsed.schema_version).toBe(1);
     expect(parsed.error.exit_code).toBe(2);
     expect(parsed.error.code).toBe("unknown_command");
+  });
+});
+
+describe("package bin entrypoints", () => {
+  test("foreman bin prints help", () => {
+    const result = runPackageBin(["foreman", "--help"]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("Usage:");
+    expect(result.stdout).toContain("foreman");
+    expect(result.stderr).toBe("");
+  });
+
+  test("foreman bin preserves JSON error output", () => {
+    const result = runPackageBin(["foreman", "--json", "unknown-command"]);
+    const parsed = JSON.parse(result.stderr);
+
+    expect(result.exitCode).toBe(2);
+    expect(result.stdout).toBe("");
+    expect(parsed.schema_version).toBe(1);
+    expect(parsed.error.code).toBe("unknown_command");
+  });
+
+  test("hook bins print help", () => {
+    const claude = runPackageBin(["foreman-hook-stop-claude-code", "--help"]);
+    const codex = runPackageBin(["foreman-hook-stop-codex", "--help"]);
+
+    expect(claude.exitCode).toBe(0);
+    expect(claude.stdout).toContain("foreman-hook-stop-claude-code");
+    expect(claude.stderr).toBe("");
+    expect(codex.exitCode).toBe(0);
+    expect(codex.stdout).toContain("foreman-hook-stop-codex");
+    expect(codex.stderr).toBe("");
   });
 });
 
