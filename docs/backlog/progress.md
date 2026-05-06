@@ -26,7 +26,7 @@ This tracker is the single status file for the v0 backlog. Update it whenever a 
 | 1b | [Chunk lifecycle](phase-1b-chunk-lifecycle.md) | Done | Reviewed | Chunks can change status/stage and append review notes. |
 | 2a | [SQLite schema](phase-2a-sqlite-schema.md) | Done | Reviewed | SQLite schema, migrations, indexes, and constraints work. |
 | 2b | [Session query CLI](phase-2b-session-query-cli.md) | Done | Reviewed | Seeded session data can be listed, shown, filtered, and resolved by prefix. |
-| 3a | [Transcript fixtures and parsers](phase-3a-transcript-fixtures-parsers.md) | Not started | Reviewed | Claude Code and Codex fixture transcripts parse into normalized sessions. |
+| 3a | [Transcript fixtures and parsers](phase-3a-transcript-fixtures-parsers.md) | Done | Reviewed | Claude Code and Codex fixture transcripts parse into normalized sessions. |
 | 3b | [Common ingestion](phase-3b-common-ingestion.md) | Not started | Reviewed | Parsed sessions persist idempotently into SQLite. |
 | 3c | [Summary, truncation, and pricing](phase-3c-summary-truncation-pricing.md) | Not started | Reviewed | Mocked summaries, truncation, and pricing work without network. |
 | 4 | [Hooks and active linkage](phase-4-hooks-active-linkage.md) | Not started | Unreviewed | Stop hooks install idempotently, never block on errors, and link active chunks. |
