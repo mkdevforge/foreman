@@ -457,7 +457,15 @@ function parseSinceOption(value: string | undefined): string | undefined {
     w: 7 * 24 * 60 * 60 * 1000
   }[unit];
 
-  return new Date(Date.now() - amount * unitMs).toISOString();
+  const durationMs = amount * unitMs;
+  const sinceMs = Date.now() - durationMs;
+  const since = new Date(sinceMs);
+
+  if (!Number.isSafeInteger(durationMs) || !Number.isFinite(sinceMs) || Number.isNaN(since.getTime())) {
+    throw new CliError(2, "invalid_since", "invalid --since value; duration is too large");
+  }
+
+  return since.toISOString();
 }
 
 function parseSessionSourceOption(value: string | undefined): SessionSource | undefined {

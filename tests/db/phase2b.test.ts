@@ -453,6 +453,11 @@ describe("foreman session query CLI", () => {
     expect(invalid.exitCode).toBe(2);
     expect(invalid.stdout).toBe("");
     expect(invalid.stderr).toContain("invalid --since value");
+
+    const tooLarge = runForeman(homeDir, ["session", "list", "--since", "9007199254740991w"]);
+    expect(tooLarge.exitCode).toBe(2);
+    expect(tooLarge.stdout).toBe("");
+    expect(tooLarge.stderr).toContain("duration is too large");
   });
 
   test("shows sessions by full ID and unique prefix with default detail", () => {
