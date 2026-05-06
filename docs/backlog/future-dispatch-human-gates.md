@@ -17,6 +17,32 @@ The dispatch layer should make asking the human a first-class successful outcome
 - Dispatch should support both autonomous execution and human-gated execution.
 - A future UI should render Foreman chunk/run state, not raw tracker issue state.
 
+## Architecture Stance
+
+Foreman should not chase literal Symphony parity. It should borrow the useful operational primitives while rejecting tracker-state-driven autonomy as the core product model.
+
+Avoid as core product behavior:
+
+- always-on daemon ownership of work selection
+- tracker polling as the primary source of dispatch readiness
+- raw Linear/Jira issue auto-dispatch
+- treating remote issue state as proof that a task is agent-ready
+
+Make core product behavior:
+
+- explicit dispatch queue populated from Foreman chunks
+- per-chunk or per-issue workspace creation
+- agent runner that can launch Codex and Claude against a Foreman chunk
+- live run state visible through CLI/JSON and later UI
+- cancellation and stop controls
+- stall detection
+- retry/backoff governed by Foreman policy
+- reconciliation between run state, workspace state, and chunk state
+- runtime observability for active and completed runs
+- optional dashboard or web surface over Foreman's state
+
+An optional local service can be introduced later for live updates or UI ergonomics, but it should not become the source of truth for work selection. Foreman should dispatch only Foreman chunks that are explicitly ready, never tracker issues just because they match a remote state.
+
 ## Candidate YAML Metadata
 
 These fields are examples for the future schema. v0 must preserve unknown fields, but must not interpret these yet.
@@ -116,11 +142,15 @@ A future dispatch UI should show:
 
 The UI can consume Foreman's JSON output initially. A daemon or local service can be introduced later if live updates require it.
 
+The first dispatch UI should be a control surface over explicit Foreman state: enqueue, run, pause, cancel, retry, answer questions, approve plans, and review completed work. It should not be an autonomous tracker monitor.
+
 ## Explicitly Out of Scope for This Seed
 
 - Raw Linear/Jira issue auto-dispatch without Foreman chunk context.
 - Assuming a tracker issue is a complete agent prompt.
+- Tracker polling as the dispatch source of truth.
+- Required always-on daemon behavior.
 - Large-team workflow ownership rules.
 - Multi-user synchronization.
-- Production daemon design.
+- Production service design.
 - Web UI implementation details.
