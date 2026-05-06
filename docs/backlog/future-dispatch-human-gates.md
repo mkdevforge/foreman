@@ -31,7 +31,7 @@ Avoid as core product behavior:
 Make core product behavior:
 
 - explicit dispatch queue populated from Foreman chunks
-- per-chunk or per-issue workspace creation
+- per-task worktree/workspace creation and reuse
 - agent runner that can launch Codex and Claude against a Foreman chunk
 - live run state visible through CLI/JSON and later UI
 - cancellation and stop controls
@@ -42,6 +42,8 @@ Make core product behavior:
 - optional dashboard or web surface over Foreman's state
 
 An optional local service can be introduced later for live updates or UI ergonomics, but it should not become the source of truth for work selection. Foreman should dispatch only Foreman chunks that are explicitly ready, never tracker issues just because they match a remote state.
+
+Workspace ownership should be task-level, not chunk-level: one worktree/workspace per Foreman task. Chunks are coordinated slices of that task and usually need to share branch state, partial edits, tests, and context. Running chunks from the same task in separate worktrees is expected to create avoidable merge and coordination problems. Dispatch can still target one chunk at a time, but the workspace should be reused for the parent task unless a future policy explicitly opts into a different isolation model.
 
 ## Candidate YAML Metadata
 
