@@ -154,7 +154,10 @@ describe("Phase 3c summary, truncation, and pricing", () => {
         commands.push(command);
         return {
           exitCode: 0,
-          stdout: "Harness summary\n",
+          stdout:
+            command.stdoutFormat === "codex-json"
+              ? '{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"Harness summary"}}\n'
+              : "Harness summary\n",
           stderr: ""
         };
       }
@@ -176,26 +179,52 @@ describe("Phase 3c summary, truncation, and pricing", () => {
       "--tools",
       ""
     ]);
+    expect(commands[0].stdoutFormat).toBe("plain-text");
     expect(commands[0].env[FOREMAN_SUMMARY_CHILD_ENV]).toBe("1");
     expect(commands[0].timeoutMs).toBe(1234);
     expect(commands[0].stdin).toContain("Summary prompt");
 
     expect(commands[1].command).toBe("codex-bin");
     expect(commands[1].args).toEqual([
+      "--disable",
+      "plugins",
+      "--ask-for-approval",
+      "never",
       "exec",
       "--model",
       "gpt-5.4-mini",
       "--sandbox",
       "read-only",
-      "--ask-for-approval",
-      "never",
       "--skip-git-repo-check",
       "--ephemeral",
+      "--ignore-user-config",
       "--ignore-rules",
+      "--json",
       "-"
     ]);
+    expect(commands[1].stdoutFormat).toBe("codex-json");
     expect(commands[1].env[FOREMAN_SUMMARY_CHILD_ENV]).toBe("1");
     expect(commands[1].cwd).toBe("/tmp/project");
+  });
+
+  test("harness summary provider extracts Codex agent messages from JSONL stdout", async () => {
+    const provider = createHarnessSummaryProvider({
+      runner: async (command) => ({
+        exitCode: 0,
+        stdout: [
+          "non-json diagnostic line",
+          '{"type":"thread.started","thread_id":"thread-1"}',
+          '{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"First summary"}}',
+          '{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"Final summary"}}',
+          '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}'
+        ].join("\n"),
+        stderr: ""
+      })
+    });
+
+    const result = await provider.summarize(summaryRequestFixture("codex"));
+
+    expect(result.summary_md).toBe("Final summary");
   });
 });
 

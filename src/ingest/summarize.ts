@@ -47,6 +47,7 @@ export interface HarnessCommand {
   cwd: string;
   env: Record<string, string>;
   timeoutMs: number;
+  stdoutFormat: "plain-text" | "codex-json";
 }
 
 export interface HarnessRunResult {
@@ -186,7 +187,7 @@ export function createHarnessSummaryProvider(
         );
       }
 
-      const summary = result.stdout.trim();
+      const summary = extractHarnessSummary(command, result.stdout).trim();
       if (summary.length === 0) {
         throw new Error(`${command.command} summary harness returned an empty summary`);
       }
@@ -194,7 +195,7 @@ export function createHarnessSummaryProvider(
       return {
         summary_md: summary,
         model_used: request.source === "claude-code" ? claudeModel : codexModel,
-        warnings: result.stderr.trim().length === 0 ? [] : [`${command.command} stderr: ${result.stderr.trim()}`]
+        warnings: formatStderrWarnings(command.command, result.stderr)
       };
     }
   };
@@ -239,7 +240,8 @@ function buildClaudeHarnessCommand(
     stdin: request.prompt,
     cwd: request.project_path,
     env: childEnvironment(),
-    timeoutMs: input.timeoutMs
+    timeoutMs: input.timeoutMs,
+    stdoutFormat: "plain-text"
   };
 }
 
@@ -250,23 +252,79 @@ function buildCodexHarnessCommand(
   return {
     command: input.command,
     args: [
+      "--disable",
+      "plugins",
+      "--ask-for-approval",
+      "never",
       "exec",
       "--model",
       input.model,
       "--sandbox",
       "read-only",
-      "--ask-for-approval",
-      "never",
       "--skip-git-repo-check",
       "--ephemeral",
+      "--ignore-user-config",
       "--ignore-rules",
+      "--json",
       "-"
     ],
     stdin: request.prompt,
     cwd: request.project_path,
     env: childEnvironment(),
-    timeoutMs: input.timeoutMs
+    timeoutMs: input.timeoutMs,
+    stdoutFormat: "codex-json"
   };
+}
+
+function extractHarnessSummary(command: HarnessCommand, stdout: string): string {
+  if (command.stdoutFormat === "plain-text") {
+    return stdout;
+  }
+
+  let summary: string | null = null;
+  for (const line of stdout.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("{")) {
+      continue;
+    }
+
+    let event: unknown;
+    try {
+      event = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+
+    if (!isJsonObject(event) || event.type !== "item.completed" || !isJsonObject(event.item)) {
+      continue;
+    }
+
+    if (event.item.type === "agent_message" && typeof event.item.text === "string") {
+      summary = event.item.text;
+    }
+  }
+
+  if (summary === null) {
+    throw new Error(`${command.command} summary harness did not return a Codex agent message`);
+  }
+
+  return summary;
+}
+
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function formatStderrWarnings(command: string, stderr: string): string[] {
+  const trimmed = stderr.trim();
+  if (trimmed.length === 0) {
+    return [];
+  }
+
+  const maxLength = 2_000;
+  const diagnostic =
+    trimmed.length <= maxLength ? trimmed : `${trimmed.slice(0, maxLength)}\n[... stderr truncated ...]`;
+  return [`${command} stderr: ${diagnostic}`];
 }
 
 async function defaultHarnessRunner(command: HarnessCommand): Promise<HarnessRunResult> {

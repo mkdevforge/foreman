@@ -66,6 +66,12 @@ Manual smoke test:
 bun test tests/ingest
 ```
 
+Optional local-only real harness smoke test, intentionally not required for CI:
+
+```sh
+bun run test:real-harness
+```
+
 ## Done Criteria
 
 - Phase 3c checkpoint passes.

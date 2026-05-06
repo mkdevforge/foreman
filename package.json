@@ -10,7 +10,8 @@
   },
   "scripts": {
     "build": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test",
+    "test:real-harness": "FOREMAN_REAL_HARNESS_TESTS=1 bun test --timeout=180000 tests/ingest/real-harness.test.ts"
   },
   "dependencies": {
     "commander": "^14.0.3",
