@@ -22,6 +22,7 @@ This tracker is the single status file for the v0 backlog. Update it whenever a 
 | --- | --- | --- | --- | --- |
 | 0 | [Project foundation](phase-0-project-foundation.md) | Done | Reviewed | Bun/TypeScript project builds, tests run, CLI dispatch exists. |
 | 1a | [Repo task store](phase-1a-repo-task-store.md) | Done | Reviewed | `.foreman/tasks/*.yaml` can be initialized, created, listed, and shown. |
+| 1c | [YAML extensibility guardrail](phase-1c-yaml-extensibility.md) | Not started | Reviewed | v0 task/chunk mutations preserve unknown YAML fields for future dispatch metadata. |
 | 1b | [Chunk lifecycle](phase-1b-chunk-lifecycle.md) | Not started | Reviewed | Chunks can change status/stage and append review notes. |
 | 2a | [SQLite schema](phase-2a-sqlite-schema.md) | Not started | Reviewed | SQLite schema, migrations, indexes, and constraints work. |
 | 2b | [Session query CLI](phase-2b-session-query-cli.md) | Not started | Reviewed | Seeded session data can be listed, shown, filtered, and resolved by prefix. |
@@ -29,6 +30,14 @@ This tracker is the single status file for the v0 backlog. Update it whenever a 
 | 4 | [Hooks and active linkage](phase-4-hooks-active-linkage.md) | Not started | Unreviewed | Stop hooks install idempotently, never block on errors, and link active chunks. |
 | 5 | [Review and catalog CLI](phase-5-review-catalog-cli.md) | Not started | Unreviewed | Review, catalog, and session cost commands join repo YAML with session DB. |
 | 6 | [v0 hardening](phase-6-v0-hardening.md) | Not started | Unreviewed | All v0 acceptance criteria pass in automated and manual end-to-end checks. |
+
+## Post-v0 Backlog Seeds
+
+These are intentionally outside v0, but v0 should avoid design choices that make them harder.
+
+| Topic | File | Status | Notes |
+| --- | --- | --- | --- |
+| Dispatch and human gates | [future dispatch and human gates](future-dispatch-human-gates.md) | Seeded | Add a Symphony-style dispatch surface over Foreman chunks, with first-class questions, approvals, and blocked outcomes. |
 
 ## Decision Gates
 
@@ -38,6 +47,7 @@ Track implementation-blocking decisions here. Close each decision before impleme
 | --- | --- | --- | --- |
 | Optional task YAML field representation | Phase 1a | Closed 2026-05-05 | Write absent `source_ref` and `description` as explicit YAML `null`; JSON output exposes explicit nullable fields. |
 | Task and chunk identifier rules | Phase 1a | Closed 2026-05-05 | Task IDs match `[A-Za-z0-9][A-Za-z0-9._-]*` and preserve case; chunk IDs match `[a-z0-9][a-z0-9-]*`. |
+| Task YAML extensibility policy | Phase 1c | Closed 2026-05-06 | v0 readers/writers validate known fields but preserve unknown task-level and chunk-level YAML fields for future dispatch metadata. |
 | Note author fallback | Phase 1b | Closed 2026-05-05 | `chunk note` uses `git config user.email` by default, allows `--author <email>`, and errors if neither is available. |
 | Duration filter syntax | Phase 2b | Closed 2026-05-05 | `--since` accepts compact relative durations with units `m`, `h`, `d`, and `w`, such as `30m`, `24h`, `7d`, or `2w`. |
 | Summary provider for v0 | Phase 3 | Open | PRD recommends Anthropic Haiku for all summaries, but implementation should record the final choice before coding provider bindings. |
@@ -55,6 +65,7 @@ Track implementation-blocking decisions here. Close each decision before impleme
 | 2. `foreman install` registers Claude Code and Codex Stop hooks idempotently. | Phases 4, 6 | Not started |
 | 3. `foreman init` creates `.foreman/` in the current repo. | Phase 1a | Done |
 | 4. `task add` and `chunk add` create well-formed YAML that round-trips. | Phase 1a | Done |
+| 4a. v0 task and chunk mutations preserve unknown YAML fields for future dispatch metadata. | Phases 1c, 1b, 6 | Not started |
 | 5. Claude Code Stop hook ingests and links an active chunk. | Phases 3, 4, 6 | Not started |
 | 6. Codex Stop hook ingests and links an active chunk. | Phases 3, 4, 6 | Not started |
 | 7. `foreman review <task>/<chunk>` shows chunk metadata plus linked sessions. | Phase 5 | Not started |

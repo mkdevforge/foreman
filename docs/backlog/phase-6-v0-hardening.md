@@ -22,6 +22,9 @@ Close the gap between feature-complete implementation and the PRD's v0 acceptanc
   - hook install does not duplicate entries
   - re-running ingestion does not duplicate rows
   - re-running Stop hook does not duplicate `session_chunks`
+- Verify task YAML extensibility:
+  - v0 task mutations preserve unknown task-level fields
+  - v0 chunk mutations preserve unknown chunk-level fields
 - Verify manual end-to-end flows for both supported source tools:
   - Claude Code session with `foreman work <task>/<chunk>` links on Stop
   - Codex session with `foreman work <task>/<chunk>` links on Stop
@@ -70,6 +73,7 @@ passes from a clean checkout, and the manual end-to-end checklist for Claude Cod
 - [ ] Repo initialization works.
 - [ ] Task YAML round-trips.
 - [ ] Chunk YAML round-trips.
+- [ ] Unknown task and chunk YAML fields survive v0 mutations.
 - [ ] Claude Code Stop hook ingests and links.
 - [ ] Codex Stop hook ingests and links.
 - [ ] Review output includes chunk metadata, linked sessions, summaries, and costs.

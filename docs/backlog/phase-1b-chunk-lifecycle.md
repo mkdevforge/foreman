@@ -14,6 +14,7 @@ Complete the repo-scoped chunk lifecycle on top of the Phase 1a YAML store. By t
   - note timestamp
   - note author
   - note body
+- Preserve unknown task-level and chunk-level YAML fields during every chunk mutation.
 - Preserve task and chunk timestamp semantics:
   - changing a task updates task `updated_at`
   - changing a chunk updates that chunk `updated_at`
@@ -43,6 +44,7 @@ Complete the repo-scoped chunk lifecycle on top of the Phase 1a YAML store. By t
 - Notes use ISO 8601 UTC timestamps.
 - Note body is a plain string argument in this phase. No editor, stdin, or file support.
 - Preserve the same atomic write behavior and YAML formatting stance from Phase 1a.
+- Do not normalize or drop unknown future dispatch metadata such as chunk questions, decisions, risk gates, approval requirements, or run attempts.
 
 ## Test Checkpoint
 
@@ -53,6 +55,7 @@ The phase is complete when automated tests cover:
 - Appending a note with timestamp, git-config author, and body.
 - Appending a note with an explicit `--author` override.
 - Preserving existing notes when appending another note.
+- Preserving unknown task-level and chunk-level fields when changing chunk status, changing chunk stage, and appending notes.
 - Updating task and chunk `updated_at` correctly.
 - Failing clearly when the chunk reference does not exist.
 - Failing clearly when note author cannot be resolved under the chosen policy.
