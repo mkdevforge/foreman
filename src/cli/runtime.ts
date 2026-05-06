@@ -1,7 +1,24 @@
 import { Command, CommanderError } from "commander";
+import type { Database } from "bun:sqlite";
 import { readFileSync } from "node:fs";
 import { CliError, type ExitCode } from "./errors";
 import { formatJsonData, formatJsonError, renderTextError } from "./output";
+import { openForemanDatabase } from "../db/client";
+import {
+  SESSION_SOURCES,
+  getLastSession,
+  getSessionById,
+  listSessions,
+  resolveSessionPrefix,
+  type SessionChunkLink,
+  type SessionDetail,
+  type SessionOverview,
+  type SessionPrompt,
+  type SessionSource,
+  type SessionSummary,
+  type SessionToolCall,
+  type SessionUsage
+} from "../db/session-queries";
 import { findRepoRoot, getGitUserEmail } from "../store/repo";
 import {
   addChunk,
@@ -82,6 +99,7 @@ function createProgram(json: boolean, io: CliIo): Command {
 
   program.addCommand(createTaskCommand(json, io));
   program.addCommand(createChunkCommand(json, io));
+  program.addCommand(createSessionCommand(json, io));
 
   return program;
 }
@@ -237,6 +255,79 @@ function createChunkCommand(json: boolean, io: CliIo): Command {
   return chunk;
 }
 
+function createSessionCommand(json: boolean, io: CliIo): Command {
+  const session = configureCommand(new Command("session"), io)
+    .description("Query recorded agent sessions.")
+    .action(() => {
+      throw new CliError(2, "missing_command", "missing session command");
+    });
+
+  configureCommand(session.command("list"), io)
+    .description("List recorded sessions.")
+    .option("--since <duration>")
+    .option("--project <path>")
+    .option("--source <source>")
+    .option("--unattached")
+    .action((options: { since?: string; project?: string; source?: string; unattached?: boolean }) => {
+      const startedAtSince = parseSinceOption(options.since);
+      const source = parseSessionSourceOption(options.source);
+      const sessions = withForemanDatabase((db) =>
+        listSessions(db, {
+          startedAtSince,
+          projectPath: options.project,
+          source,
+          unattached: options.unattached === true
+        })
+      );
+
+      writeData(json, io, renderSessionList(sessions), { sessions: sessions.map(toJsonSessionOverview) });
+    });
+
+  configureCommand(session.command("show"), io)
+    .description("Show a recorded session.")
+    .argument("<prefix>")
+    .option("--full")
+    .action((prefix: string, options: { full?: boolean }) => {
+      const full = options.full === true;
+      const detail = withForemanDatabase((db) => {
+        const resolved = resolveSessionPrefix(db, prefix);
+
+        if (resolved.kind === "missing") {
+          throw new CliError(1, "session_not_found", `session '${prefix}' was not found`);
+        }
+
+        if (resolved.kind === "ambiguous") {
+          throw new CliError(
+            1,
+            "ambiguous_session_prefix",
+            `session prefix '${prefix}' is ambiguous; candidates: ${resolved.candidates.join(", ")}`
+          );
+        }
+
+        return getSessionById(db, resolved.id, full);
+      });
+
+      if (detail === null) {
+        throw new CliError(1, "session_not_found", `session '${prefix}' was not found`);
+      }
+
+      writeData(json, io, renderSessionShow(detail), { session: toJsonSessionDetail(detail) });
+    });
+
+  configureCommand(session.command("last"), io)
+    .description("Show the latest recorded session.")
+    .option("--full")
+    .action((options: { full?: boolean }) => {
+      const detail = withForemanDatabase((db) => getLastSession(db, options.full === true));
+
+      writeData(json, io, detail === null ? "No sessions found.\n" : renderSessionShow(detail), {
+        session: detail === null ? null : toJsonSessionDetail(detail)
+      });
+    });
+
+  return session;
+}
+
 function configureCommand(command: Command, io: CliIo): Command {
   return command
     .exitOverride()
@@ -333,6 +424,54 @@ function readSpecFile(path: string | undefined): string {
   }
 }
 
+function withForemanDatabase<T>(read: (db: Database) => T): T {
+  const db = openForemanDatabase();
+
+  try {
+    return read(db);
+  } finally {
+    db.close();
+  }
+}
+
+function parseSinceOption(value: string | undefined): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const match = /^([1-9]\d*)([mhdw])$/.exec(value);
+  if (match === null) {
+    throw new CliError(2, "invalid_since", "invalid --since value; expected compact duration like 30m, 24h, 7d, or 2w");
+  }
+
+  const amount = Number(match[1]);
+  if (!Number.isSafeInteger(amount)) {
+    throw new CliError(2, "invalid_since", "invalid --since value; duration is too large");
+  }
+
+  const unit = match[2] as "m" | "h" | "d" | "w";
+  const unitMs = {
+    m: 60 * 1000,
+    h: 60 * 60 * 1000,
+    d: 24 * 60 * 60 * 1000,
+    w: 7 * 24 * 60 * 60 * 1000
+  }[unit];
+
+  return new Date(Date.now() - amount * unitMs).toISOString();
+}
+
+function parseSessionSourceOption(value: string | undefined): SessionSource | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!SESSION_SOURCES.includes(value as SessionSource)) {
+    throw new CliError(2, "invalid_source", `invalid source '${value}'; expected one of ${SESSION_SOURCES.join(", ")}`);
+  }
+
+  return value as SessionSource;
+}
+
 function toJsonTask(task: ForemanTask) {
   return {
     schema_version: task.schema_version,
@@ -365,6 +504,88 @@ function toJsonNote(note: ChunkNote) {
     ts: note.ts,
     author: note.author,
     body: note.body
+  };
+}
+
+function toJsonSessionOverview(session: SessionOverview) {
+  return {
+    id: session.id,
+    source: session.source,
+    source_session_id: session.source_session_id,
+    started_at: session.started_at,
+    ended_at: session.ended_at,
+    project_path: session.project_path,
+    repo_remote: session.repo_remote,
+    model: session.model,
+    machine: session.machine,
+    user_email: session.user_email,
+    created_at: session.created_at,
+    usage: session.usage === null ? null : toJsonSessionUsage(session.usage),
+    summary: session.summary === null ? null : toJsonSessionSummary(session.summary),
+    linked_chunks: session.linked_chunks.map(toJsonSessionChunkLink)
+  };
+}
+
+function toJsonSessionDetail(session: SessionDetail) {
+  const detail: Record<string, unknown> = toJsonSessionOverview(session);
+
+  if (session.prompts !== undefined) {
+    detail.prompts = session.prompts.map(toJsonSessionPrompt);
+  }
+
+  if (session.tool_calls !== undefined) {
+    detail.tool_calls = session.tool_calls.map(toJsonSessionToolCall);
+  }
+
+  return detail;
+}
+
+function toJsonSessionUsage(usage: SessionUsage) {
+  return {
+    input_tokens: usage.input_tokens,
+    output_tokens: usage.output_tokens,
+    cache_read_tokens: usage.cache_read_tokens,
+    cache_creation_tokens: usage.cache_creation_tokens,
+    cost_usd: usage.cost_usd
+  };
+}
+
+function toJsonSessionSummary(summary: SessionSummary) {
+  return {
+    summary_md: summary.summary_md,
+    model_used: summary.model_used,
+    generated_at: summary.generated_at
+  };
+}
+
+function toJsonSessionChunkLink(link: SessionChunkLink) {
+  return {
+    task_id: link.task_id,
+    chunk_id: link.chunk_id,
+    stage: link.stage,
+    linked_at: link.linked_at,
+    linked_by: link.linked_by
+  };
+}
+
+function toJsonSessionPrompt(prompt: SessionPrompt) {
+  return {
+    id: prompt.id,
+    ts: prompt.ts,
+    content: prompt.content,
+    content_hash: prompt.content_hash
+  };
+}
+
+function toJsonSessionToolCall(toolCall: SessionToolCall) {
+  return {
+    id: toolCall.id,
+    ts: toolCall.ts,
+    tool_name: toolCall.tool_name,
+    params_json: toolCall.params_json,
+    result_json: toolCall.result_json,
+    is_error: toolCall.is_error,
+    params_hash: toolCall.params_hash
   };
 }
 
@@ -429,8 +650,136 @@ function renderChunkList(chunks: ForemanChunk[]): string {
   return `${chunks.map(formatChunkSummary).join("\n")}\n`;
 }
 
+function renderSessionList(sessions: SessionOverview[]): string {
+  if (sessions.length === 0) {
+    return "No sessions found.\n";
+  }
+
+  return `${sessions.map(formatSessionListRow).join("\n")}\n`;
+}
+
+function renderSessionShow(session: SessionDetail): string {
+  const lines = [
+    `Session ${session.id}`,
+    `Source: ${session.source}`,
+    `Source session: ${session.source_session_id}`,
+    `Started: ${session.started_at}`,
+    `Ended: ${session.ended_at}`,
+    `Project: ${session.project_path}`,
+    `Repo remote: ${session.repo_remote ?? "null"}`,
+    `Model: ${session.model ?? "null"}`,
+    `Machine: ${session.machine}`,
+    `User: ${session.user_email}`,
+    `Created: ${session.created_at}`,
+    `Usage: ${formatSessionUsage(session.usage)}`,
+    "Summary:",
+    ...renderSessionSummary(session.summary),
+    "Linked chunks:",
+    ...renderSessionChunkLinks(session.linked_chunks)
+  ];
+
+  if (session.prompts !== undefined) {
+    lines.push("Prompts:", ...renderSessionPrompts(session.prompts));
+  }
+
+  if (session.tool_calls !== undefined) {
+    lines.push("Tool calls:", ...renderSessionToolCalls(session.tool_calls));
+  }
+
+  return `${lines.join("\n")}\n`;
+}
+
 function formatChunkSummary(chunk: ForemanChunk): string {
   return `${chunk.id}  ${chunk.status}  ${chunk.stage}  ${chunk.title}`;
+}
+
+function formatSessionListRow(session: SessionOverview): string {
+  return [
+    session.id,
+    session.source,
+    session.started_at,
+    session.project_path,
+    `cost_usd=${formatSessionCost(session.usage)}`,
+    `chunks=${formatSessionChunksInline(session.linked_chunks)}`,
+    `summary=${firstLine(session.summary?.summary_md ?? "null")}`
+  ].join("  ");
+}
+
+function formatSessionUsage(usage: SessionUsage | null): string {
+  if (usage === null) {
+    return "null";
+  }
+
+  return [
+    `input=${usage.input_tokens}`,
+    `output=${usage.output_tokens}`,
+    `cache_read=${usage.cache_read_tokens}`,
+    `cache_creation=${usage.cache_creation_tokens}`,
+    `cost_usd=${formatSessionCost(usage)}`
+  ].join(" ");
+}
+
+function formatSessionCost(usage: SessionUsage | null): string {
+  return usage === null ? "null" : usage.cost_usd.toFixed(4);
+}
+
+function renderSessionSummary(summary: SessionSummary | null): string[] {
+  if (summary === null) {
+    return ["  null"];
+  }
+
+  return [
+    `  Model: ${summary.model_used}`,
+    `  Generated: ${summary.generated_at}`,
+    ...renderIndentedBlock(summary.summary_md)
+  ];
+}
+
+function renderSessionChunkLinks(links: SessionChunkLink[]): string[] {
+  if (links.length === 0) {
+    return ["  none"];
+  }
+
+  return links.map((link) => `  ${formatSessionChunkLink(link)}`);
+}
+
+function formatSessionChunkLink(link: SessionChunkLink): string {
+  return `${link.task_id}/${link.chunk_id}  ${link.stage}  ${link.linked_by}  ${link.linked_at}`;
+}
+
+function formatSessionChunksInline(links: SessionChunkLink[]): string {
+  if (links.length === 0) {
+    return "none";
+  }
+
+  return links.map((link) => `${link.task_id}/${link.chunk_id}`).join(",");
+}
+
+function renderSessionPrompts(prompts: SessionPrompt[]): string[] {
+  if (prompts.length === 0) {
+    return ["  none"];
+  }
+
+  return prompts.flatMap((prompt) => [
+    `  ${prompt.id}  ${prompt.ts}  ${prompt.content_hash}`,
+    ...renderIndentedBlock(prompt.content).map((line) => `  ${line}`)
+  ]);
+}
+
+function renderSessionToolCalls(toolCalls: SessionToolCall[]): string[] {
+  if (toolCalls.length === 0) {
+    return ["  none"];
+  }
+
+  return toolCalls.flatMap((toolCall) => [
+    `  ${toolCall.id}  ${toolCall.ts}  ${toolCall.tool_name}  error=${toolCall.is_error}  ${toolCall.params_hash}`,
+    `    params: ${toolCall.params_json}`,
+    `    result: ${toolCall.result_json ?? "null"}`
+  ]);
+}
+
+function firstLine(value: string): string {
+  return value.split(/\r?\n/, 1)[0] ?? "";
 }
 
 function renderIndentedBlock(value: string | null): string[] {
