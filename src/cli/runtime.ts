@@ -116,6 +116,18 @@ function createProgram(json: boolean, io: CliIo): Command {
   program
     .command("install")
     .description("Install Foreman Stop hooks for supported agent tools.")
+    .addHelpText(
+      "after",
+      [
+        "",
+        "Config files:",
+        "  Claude Code: ~/.claude/settings.json",
+        "  Codex:      ~/.codex/hooks.json and ~/.codex/config.toml",
+        "",
+        "Codex install writes the Stop hook to hooks.json and enables",
+        "[features] codex_hooks = true in config.toml when needed."
+      ].join("\n")
+    )
     .option("--tool <tool>", "claude-code, codex, or all")
     .action((options: { tool?: string }) => {
       const result = installForemanHooks({ tool: parseInstallTool(options.tool) });

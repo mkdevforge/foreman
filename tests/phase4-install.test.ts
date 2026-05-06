@@ -11,6 +11,17 @@ const decoder = new TextDecoder();
 const tempDirs: string[] = [];
 
 describe("Phase 4 hook installation", () => {
+  test("install help documents user-level hook config side effects", () => {
+    const homeDir = createTempDir();
+    const result = runForeman(homeDir, ["install", "--help"]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("~/.claude/settings.json");
+    expect(result.stdout).toContain("~/.codex/hooks.json");
+    expect(result.stdout).toContain("~/.codex/config.toml");
+    expect(result.stdout).toContain("codex_hooks = true");
+  });
+
   test("Claude install is idempotent and preserves unrelated settings", () => {
     const homeDir = createTempDir();
     const settingsPath = join(homeDir, ".claude", "settings.json");
