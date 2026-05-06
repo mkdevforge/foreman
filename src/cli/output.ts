@@ -25,3 +25,7 @@ export function formatJsonError(error: CliError): string {
 
   return `${JSON.stringify(response, null, 2)}\n`;
 }
+
+export function formatJsonData<T extends Record<string, unknown>>(data: T): string {
+  return `${JSON.stringify({ schema_version: 1, ...data }, null, 2)}\n`;
+}

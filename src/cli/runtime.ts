@@ -1,6 +1,10 @@
 import { Command, CommanderError } from "commander";
+import { readFileSync } from "node:fs";
 import { CliError, type ExitCode } from "./errors";
-import { formatJsonError, renderTextError } from "./output";
+import { formatJsonData, formatJsonError, renderTextError } from "./output";
+import { findRepoRoot } from "../store/repo";
+import { addChunk, addTask, initializeForemanRepo, listChunks, listTasks, readTask, updateTaskStatus } from "../store/task-store";
+import { parseChunkRef, type ForemanChunk, type ForemanTask } from "../store/schema";
 
 export type WriteFn = (text: string) => void;
 
@@ -21,7 +25,7 @@ interface GlobalFlags {
 
 export function runForemanCli(argv: string[], io: CliIo): CliResult {
   const globals = extractGlobalFlags(argv);
-  const program = createProgram();
+  const program = createProgram(globals.json, io);
 
   if (globals.help) {
     io.stdout(program.helpInformation());
@@ -44,8 +48,8 @@ export function runForemanCli(argv: string[], io: CliIo): CliResult {
   }
 }
 
-function createProgram(): Command {
-  return new Command()
+function createProgram(json: boolean, io: CliIo): Command {
+  const program = new Command()
     .name("foreman")
     .description("Supervisor-first CLI for managing AI coding agents.")
     .helpOption(false)
@@ -55,6 +59,128 @@ function createProgram(): Command {
       writeOut: () => undefined,
       writeErr: () => undefined
     });
+
+  program
+    .command("init")
+    .description("Initialize Foreman metadata in the current Git repository.")
+    .action(() => {
+      const repoRoot = findRepoRoot();
+      const paths = initializeForemanRepo(repoRoot);
+
+      writeData(json, io, `Initialized Foreman in ${paths.foremanDir}\n`, {
+        repo_root: repoRoot,
+        foreman_dir: paths.foremanDir,
+        tasks_dir: paths.tasksDir
+      });
+    });
+
+  program.addCommand(createTaskCommand(json, io));
+  program.addCommand(createChunkCommand(json, io));
+
+  return program;
+}
+
+function createTaskCommand(json: boolean, io: CliIo): Command {
+  const task = new Command("task")
+    .description("Manage repo-scoped tasks.")
+    .action(() => {
+      throw new CliError(2, "missing_command", "missing task command");
+    });
+
+  task
+    .command("add")
+    .description("Create a task YAML file.")
+    .argument("<id>")
+    .requiredOption("--title <title>")
+    .option("--source-ref <sourceRef>")
+    .option("--description <description>")
+    .action((id: string, options: { title: string; sourceRef?: string; description?: string }) => {
+      const repoRoot = findRepoRoot();
+      const newTask = addTask(repoRoot, {
+        id,
+        title: options.title,
+        sourceRef: options.sourceRef,
+        description: options.description
+      });
+
+      writeData(json, io, `Added task ${newTask.id}\n`, { task: newTask });
+    });
+
+  task
+    .command("list")
+    .description("List task YAML files.")
+    .option("--status <status>")
+    .action((options: { status?: string }) => {
+      const repoRoot = findRepoRoot();
+      const tasks = listTasks(repoRoot, options.status);
+
+      writeData(json, io, renderTaskList(tasks), { tasks });
+    });
+
+  task
+    .command("show")
+    .description("Show a task YAML file.")
+    .argument("<id>")
+    .action((id: string) => {
+      const repoRoot = findRepoRoot();
+      const taskRecord = readTask(repoRoot, id);
+
+      writeData(json, io, renderTaskShow(taskRecord), { task: taskRecord });
+    });
+
+  task
+    .command("status")
+    .description("Update task status.")
+    .argument("<id>")
+    .argument("<status>")
+    .action((id: string, status: string) => {
+      const repoRoot = findRepoRoot();
+      const taskRecord = updateTaskStatus(repoRoot, id, status);
+
+      writeData(json, io, `Updated task ${taskRecord.id} status to ${taskRecord.status}\n`, { task: taskRecord });
+    });
+
+  return task;
+}
+
+function createChunkCommand(json: boolean, io: CliIo): Command {
+  const chunk = new Command("chunk")
+    .description("Manage task chunks.")
+    .action(() => {
+      throw new CliError(2, "missing_command", "missing chunk command");
+    });
+
+  chunk
+    .command("add")
+    .description("Create a chunk under a task.")
+    .argument("<task>/<chunk>")
+    .requiredOption("--title <title>")
+    .option("--spec-file <path>")
+    .action((ref: string, options: { title: string; specFile?: string }) => {
+      const repoRoot = findRepoRoot();
+      const { taskId, chunkId } = parseChunkRef(ref);
+      const newChunk = addChunk(repoRoot, {
+        taskId,
+        chunkId,
+        title: options.title,
+        spec: readSpecFile(options.specFile)
+      });
+
+      writeData(json, io, `Added chunk ${taskId}/${newChunk.id}\n`, { task_id: taskId, chunk: newChunk });
+    });
+
+  chunk
+    .command("list")
+    .description("List chunks for a task.")
+    .argument("<task>")
+    .action((taskId: string) => {
+      const repoRoot = findRepoRoot();
+      const chunks = listChunks(repoRoot, taskId);
+
+      writeData(json, io, renderChunkList(chunks), { task_id: taskId, chunks });
+    });
+
+  return chunk;
 }
 
 function extractGlobalFlags(argv: string[]): GlobalFlags {
@@ -126,4 +252,75 @@ function commanderMessage(error: CommanderError, argv: string[]): string {
 function writeError(error: CliError, json: boolean, io: CliIo): void {
   const body = json ? formatJsonError(error) : renderTextError(error);
   io.stderr(body);
+}
+
+function writeData<T extends Record<string, unknown>>(json: boolean, io: CliIo, text: string, data: T): void {
+  io.stdout(json ? formatJsonData(data) : text);
+}
+
+function readSpecFile(path: string | undefined): string {
+  if (path === undefined) {
+    return "";
+  }
+
+  try {
+    return readFileSync(path, "utf8");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new CliError(2, "spec_file_read_failed", `failed to read spec file '${path}': ${message}`);
+  }
+}
+
+function renderTaskList(tasks: ForemanTask[]): string {
+  if (tasks.length === 0) {
+    return "No tasks found.\n";
+  }
+
+  return `${tasks.map((task) => `${task.id}  ${task.status}  ${task.title}`).join("\n")}\n`;
+}
+
+function renderTaskShow(task: ForemanTask): string {
+  const lines = [
+    `Task ${task.id}`,
+    `Title: ${task.title}`,
+    `Status: ${task.status}`,
+    `Source: ${task.source_ref ?? "null"}`,
+    "Description:",
+    ...renderIndentedBlock(task.description),
+    `Created: ${task.created_at}`,
+    `Updated: ${task.updated_at}`,
+    "Chunks:"
+  ];
+
+  if (task.chunks.length === 0) {
+    lines.push("  none");
+  } else {
+    lines.push(...task.chunks.map((chunk) => `  ${formatChunkSummary(chunk)}`));
+  }
+
+  return `${lines.join("\n")}\n`;
+}
+
+function renderChunkList(chunks: ForemanChunk[]): string {
+  if (chunks.length === 0) {
+    return "No chunks found.\n";
+  }
+
+  return `${chunks.map(formatChunkSummary).join("\n")}\n`;
+}
+
+function formatChunkSummary(chunk: ForemanChunk): string {
+  return `${chunk.id}  ${chunk.status}  ${chunk.stage}  ${chunk.title}`;
+}
+
+function renderIndentedBlock(value: string | null): string[] {
+  if (value === null) {
+    return ["  null"];
+  }
+
+  if (value.length === 0) {
+    return ["  "];
+  }
+
+  return value.split(/\r?\n/).map((line) => `  ${line}`);
 }
