@@ -22,6 +22,7 @@ import {
   assertValidTaskId,
   assertValidTaskStatus,
   nowIso,
+  type ChunkRef,
   type ChunkNote,
   type ForemanChunk,
   type ForemanTask,
@@ -40,6 +41,11 @@ export interface AddChunkInput {
   chunkId: string;
   title: string;
   spec: string;
+}
+
+export interface AppendChunkNoteInput extends ChunkRef {
+  author: string;
+  body: string;
 }
 
 const README_BODY = `# Foreman
@@ -172,6 +178,66 @@ export function listChunks(repoRoot: string, taskId: string): ForemanChunk[] {
   return readTask(repoRoot, taskId).chunks;
 }
 
+export function updateChunkStatus(repoRoot: string, ref: ChunkRef, status: string): ForemanChunk {
+  assertValidTaskStatus(status);
+
+  return mutateChunk(repoRoot, ref, (task, chunk) => {
+    const now = nowIso();
+
+    chunk.status = status;
+    chunk.updated_at = now;
+    task.updated_at = now;
+  });
+}
+
+export function updateChunkStage(repoRoot: string, ref: ChunkRef, stage: string): ForemanChunk {
+  assertValidChunkStage(stage);
+
+  return mutateChunk(repoRoot, ref, (task, chunk) => {
+    const now = nowIso();
+
+    chunk.stage = stage;
+    chunk.updated_at = now;
+    task.updated_at = now;
+  });
+}
+
+export function appendChunkNote(repoRoot: string, input: AppendChunkNoteInput): ForemanChunk {
+  assertNonEmpty(input.author, "author");
+  assertNonEmpty(input.body, "note body");
+
+  return mutateChunk(repoRoot, input, (task, chunk) => {
+    const now = nowIso();
+
+    chunk.notes.push({
+      ts: now,
+      author: input.author,
+      body: input.body
+    });
+    chunk.updated_at = now;
+    task.updated_at = now;
+  });
+}
+
+function mutateChunk(
+  repoRoot: string,
+  ref: ChunkRef,
+  mutate: (task: ForemanTask, chunk: ForemanChunk) => void
+): ForemanChunk {
+  const paths = requireInitialized(repoRoot);
+  const task = readTask(repoRoot, ref.taskId);
+  const chunk = task.chunks.find((candidate) => candidate.id === ref.chunkId);
+
+  if (chunk === undefined) {
+    throw new CliError(2, "chunk_not_found", `chunk '${ref.taskId}/${ref.chunkId}' was not found`);
+  }
+
+  mutate(task, chunk);
+  writeTaskFile(paths, task);
+
+  return chunk;
+}
+
 function requireInitialized(repoRoot: string): ForemanPaths {
   const paths = getForemanPaths(repoRoot);
 
@@ -199,8 +265,8 @@ function readTaskFile(path: string): ForemanTask {
 }
 
 function writeTaskFile(paths: ForemanPaths, task: ForemanTask): void {
-  validateTask(task, taskFilePath(paths, task.id));
-  atomicWriteFile(taskFilePath(paths, task.id), formatTaskYaml(task));
+  const normalized = validateTask(task, taskFilePath(paths, task.id));
+  atomicWriteFile(taskFilePath(paths, normalized.id), formatTaskYaml(normalized));
 }
 
 function formatTaskYaml(task: ForemanTask): string {
@@ -255,6 +321,7 @@ function validateTask(value: unknown, source: string): ForemanTask {
   }
 
   return {
+    ...record,
     schema_version: SCHEMA_VERSION,
     id,
     title,
@@ -290,6 +357,7 @@ function validateChunk(value: unknown, source: string): ForemanChunk {
   );
 
   return {
+    ...record,
     id,
     title,
     spec,
@@ -307,6 +375,7 @@ function validateNote(value: unknown, source: string): ChunkNote {
   assertIsoUtcTimestamp(ts, "ts", source);
 
   return {
+    ...record,
     ts,
     author: expectString(record.author, "author", source),
     body: expectString(record.body, "body", source)

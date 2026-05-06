@@ -26,6 +26,24 @@ export function findRepoRoot(cwd = process.cwd()): string {
   return result.stdout.trim();
 }
 
+export function getGitUserEmail(cwd = process.cwd()): string | null {
+  const result = spawnSync("git", ["config", "user.email"], {
+    cwd,
+    encoding: "utf8"
+  });
+
+  if (result.error) {
+    throw new CliError(1, "git_not_found", `failed to run git: ${result.error.message}`);
+  }
+
+  if (result.status !== 0) {
+    return null;
+  }
+
+  const email = result.stdout.trim();
+  return email.length > 0 ? email : null;
+}
+
 export function getForemanPaths(repoRoot: string): ForemanPaths {
   const foremanDir = join(repoRoot, ".foreman");
 

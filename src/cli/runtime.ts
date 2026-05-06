@@ -2,8 +2,19 @@ import { Command, CommanderError } from "commander";
 import { readFileSync } from "node:fs";
 import { CliError, type ExitCode } from "./errors";
 import { formatJsonData, formatJsonError, renderTextError } from "./output";
-import { findRepoRoot } from "../store/repo";
-import { addChunk, addTask, initializeForemanRepo, listChunks, listTasks, readTask, updateTaskStatus } from "../store/task-store";
+import { findRepoRoot, getGitUserEmail } from "../store/repo";
+import {
+  addChunk,
+  addTask,
+  appendChunkNote,
+  initializeForemanRepo,
+  listChunks,
+  listTasks,
+  readTask,
+  updateChunkStage,
+  updateChunkStatus,
+  updateTaskStatus
+} from "../store/task-store";
 import { parseChunkRef, type ForemanChunk, type ForemanTask } from "../store/schema";
 
 export type WriteFn = (text: string) => void;
@@ -169,6 +180,58 @@ function createChunkCommand(json: boolean, io: CliIo): Command {
       writeData(json, io, renderChunkList(chunks), { task_id: taskId, chunks });
     });
 
+  configureCommand(chunk.command("status"), io)
+    .description("Update chunk status.")
+    .argument("<task>/<chunk>")
+    .argument("<status>")
+    .action((ref: string, status: string) => {
+      const repoRoot = findRepoRoot();
+      const chunkRef = parseChunkRef(ref);
+      const updatedChunk = updateChunkStatus(repoRoot, chunkRef, status);
+
+      writeData(json, io, `Updated chunk ${ref} status to ${updatedChunk.status}\n`, {
+        task_id: chunkRef.taskId,
+        chunk: updatedChunk
+      });
+    });
+
+  configureCommand(chunk.command("stage"), io)
+    .description("Update chunk stage.")
+    .argument("<task>/<chunk>")
+    .argument("<stage>")
+    .action((ref: string, stage: string) => {
+      const repoRoot = findRepoRoot();
+      const chunkRef = parseChunkRef(ref);
+      const updatedChunk = updateChunkStage(repoRoot, chunkRef, stage);
+
+      writeData(json, io, `Updated chunk ${ref} stage to ${updatedChunk.stage}\n`, {
+        task_id: chunkRef.taskId,
+        chunk: updatedChunk
+      });
+    });
+
+  configureCommand(chunk.command("note"), io)
+    .description("Append a review note to a chunk.")
+    .argument("<task>/<chunk>")
+    .argument("<body>")
+    .option("--author <email>")
+    .action((ref: string, body: string, options: { author?: string }) => {
+      const repoRoot = findRepoRoot();
+      const chunkRef = parseChunkRef(ref);
+      const updatedChunk = appendChunkNote(repoRoot, {
+        ...chunkRef,
+        author: resolveNoteAuthor(repoRoot, options.author),
+        body
+      });
+      const note = updatedChunk.notes.at(-1);
+
+      writeData(json, io, `Added note to chunk ${ref}\n`, {
+        task_id: chunkRef.taskId,
+        chunk: updatedChunk,
+        note
+      });
+    });
+
   return chunk;
 }
 
@@ -266,6 +329,29 @@ function readSpecFile(path: string | undefined): string {
     const message = error instanceof Error ? error.message : String(error);
     throw new CliError(2, "spec_file_read_failed", `failed to read spec file '${path}': ${message}`);
   }
+}
+
+function resolveNoteAuthor(repoRoot: string, explicitAuthor: string | undefined): string {
+  if (explicitAuthor !== undefined) {
+    const author = explicitAuthor.trim();
+
+    if (author.length === 0) {
+      throw new CliError(2, "invalid_input", "author must not be empty");
+    }
+
+    return author;
+  }
+
+  const gitAuthor = getGitUserEmail(repoRoot);
+  if (gitAuthor === null) {
+    throw new CliError(
+      2,
+      "author_not_found",
+      "note author was not provided and git config user.email is not set; use --author <email>"
+    );
+  }
+
+  return gitAuthor;
 }
 
 function renderTaskList(tasks: ForemanTask[]): string {

@@ -12,6 +12,7 @@ export interface ChunkNote {
   ts: string;
   author: string;
   body: string;
+  [key: string]: unknown;
 }
 
 export interface ForemanChunk {
@@ -23,6 +24,7 @@ export interface ForemanChunk {
   created_at: string;
   updated_at: string;
   notes: ChunkNote[];
+  [key: string]: unknown;
 }
 
 export interface ForemanTask {
@@ -35,6 +37,7 @@ export interface ForemanTask {
   created_at: string;
   updated_at: string;
   chunks: ForemanChunk[];
+  [key: string]: unknown;
 }
 
 export interface ChunkRef {
