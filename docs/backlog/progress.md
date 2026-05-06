@@ -24,7 +24,7 @@ This tracker is the single status file for the v0 backlog. Update it whenever a 
 | 1a | [Repo task store](phase-1a-repo-task-store.md) | Done | Reviewed | `.foreman/tasks/*.yaml` can be initialized, created, listed, and shown. |
 | 1c | [YAML extensibility guardrail](phase-1c-yaml-extensibility.md) | Done | Reviewed | v0 task/chunk mutations preserve unknown YAML fields for future dispatch metadata. |
 | 1b | [Chunk lifecycle](phase-1b-chunk-lifecycle.md) | Done | Reviewed | Chunks can change status/stage and append review notes. |
-| 2a | [SQLite schema](phase-2a-sqlite-schema.md) | Not started | Reviewed | SQLite schema, migrations, indexes, and constraints work. |
+| 2a | [SQLite schema](phase-2a-sqlite-schema.md) | Done | Reviewed | SQLite schema, migrations, indexes, and constraints work. |
 | 2b | [Session query CLI](phase-2b-session-query-cli.md) | Not started | Reviewed | Seeded session data can be listed, shown, filtered, and resolved by prefix. |
 | 3 | [Transcript ingestion](phase-3-transcript-ingestion.md) | Not started | Unreviewed | Claude Code and Codex fixture transcripts ingest idempotently with mocked summaries. |
 | 4 | [Hooks and active linkage](phase-4-hooks-active-linkage.md) | Not started | Unreviewed | Stop hooks install idempotently, never block on errors, and link active chunks. |
