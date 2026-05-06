@@ -56,7 +56,7 @@ Track implementation-blocking decisions here. Close each decision before impleme
 | Summary provider for v0 | Phase 3c | Open | PRD recommends Anthropic Haiku for all summaries, but implementation should record the final choice before coding provider bindings. |
 | Codex hook config location | Phase 4 | Open | PRD requires checking current Codex hook docs at implementation time and choosing one consistent config format. |
 | Summary truncation strategy details | Phase 3c | Open | PRD recommends head + tail with an elision marker and an approximate 50k-token cap. |
-| Codex tool-call pairing format | Phase 3a | Open | Must be documented from actual Codex JSONL fixtures or current docs before parser behavior is finalized. |
+| Codex tool-call pairing format | Phase 3a | Closed 2026-05-06 | Pair Codex tool-use/result events by `payload.call_id`. Tool-use event types are `function_call`, `custom_tool_call`, and `web_search_call`; result event types are `function_call_output` and `custom_tool_call_output`. Fixtures must document the observed event shape. |
 | Active context staleness policy | Phase 4 | Open | PRD recommends ignoring active context older than 24 hours. Record final behavior before hook linkage tests are written. |
 | Pricing table scope and location | Phase 3c | Open | PRD allows inline hardcoded pricing for v0 with a migration path comment. |
 

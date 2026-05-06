@@ -6,12 +6,6 @@ Backlog review: Reviewed.
 
 Turn source-specific Stop payloads and transcript files into one normalized in-memory parsed session. This phase proves Foreman can understand Claude Code and Codex transcripts without SQLite writes, summary generation, pricing, hook installation, or active chunk linkage.
 
-## Decision Gates
-
-Close these in `docs/backlog/progress.md` before implementation starts:
-
-- Codex tool-call pairing format.
-
 ## Normalized Parsed Session
 
 The parser output should stay source-agnostic and persistence-free:
@@ -74,7 +68,13 @@ Internal UUIDs, content hashes, machine/user origin stamps, and database row IDs
 - Keep parser fixtures small but representative.
 - Include at least one interrupted tool call case per source where the source format can represent it.
 - Treat unknown optional transcript fields as parser warnings where useful, not hard failures, unless they make required v0 fields impossible to produce.
-- Codex pairing behavior must be based on actual observed JSONL fixtures, not guessed.
+- Codex tool-call pairing uses `payload.call_id` as the pairing key.
+- Codex tool uses are events where `payload.type` is one of `function_call`, `custom_tool_call`, or `web_search_call`.
+- Codex tool results are events where `payload.type` is one of `function_call_output` or `custom_tool_call_output`.
+- Codex tool names come from `payload.name`, except web search events default to `web_search`.
+- Codex tool input comes from the first present value of `payload.arguments`, `payload.input`, or `payload.action`.
+- Codex tool result comes from the paired output event's `payload.output`; interrupted calls have `result_json = null` and `is_error = false`.
+- Codex project path precedence is Stop payload `cwd`, latest `turn_context.payload.cwd`, then `session_meta.payload.cwd`; missing cwd is a parser error.
 
 ## Worktree Stance
 
