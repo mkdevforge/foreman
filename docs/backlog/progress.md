@@ -22,7 +22,7 @@ This tracker is the single status file for the v0 backlog. Update it whenever a 
 | --- | --- | --- | --- | --- |
 | 0 | [Project foundation](phase-0-project-foundation.md) | Done | Reviewed | Bun/TypeScript project builds, tests run, CLI dispatch exists. |
 | 1a | [Repo task store](phase-1a-repo-task-store.md) | Done | Reviewed | `.foreman/tasks/*.yaml` can be initialized, created, listed, and shown. |
-| 1c | [YAML extensibility guardrail](phase-1c-yaml-extensibility.md) | Not started | Reviewed | v0 task/chunk mutations preserve unknown YAML fields for future dispatch metadata. |
+| 1c | [YAML extensibility guardrail](phase-1c-yaml-extensibility.md) | Done | Reviewed | v0 task/chunk mutations preserve unknown YAML fields for future dispatch metadata. |
 | 1b | [Chunk lifecycle](phase-1b-chunk-lifecycle.md) | Done | Reviewed | Chunks can change status/stage and append review notes. |
 | 2a | [SQLite schema](phase-2a-sqlite-schema.md) | Not started | Reviewed | SQLite schema, migrations, indexes, and constraints work. |
 | 2b | [Session query CLI](phase-2b-session-query-cli.md) | Not started | Reviewed | Seeded session data can be listed, shown, filtered, and resolved by prefix. |
@@ -65,7 +65,7 @@ Track implementation-blocking decisions here. Close each decision before impleme
 | 2. `foreman install` registers Claude Code and Codex Stop hooks idempotently. | Phases 4, 6 | Not started |
 | 3. `foreman init` creates `.foreman/` in the current repo. | Phase 1a | Done |
 | 4. `task add` and `chunk add` create well-formed YAML that round-trips. | Phase 1a | Done |
-| 4a. v0 task and chunk mutations preserve unknown YAML fields for future dispatch metadata. | Phases 1c, 1b, 6 | In progress |
+| 4a. v0 task and chunk mutations preserve unknown YAML fields for future dispatch metadata. | Phases 1c, 1b, 6 | Done |
 | 5. Claude Code Stop hook ingests and links an active chunk. | Phases 3, 4, 6 | Not started |
 | 6. Codex Stop hook ingests and links an active chunk. | Phases 3, 4, 6 | Not started |
 | 7. `foreman review <task>/<chunk>` shows chunk metadata plus linked sessions. | Phase 5 | Not started |

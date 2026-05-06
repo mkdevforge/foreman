@@ -15,7 +15,7 @@ import {
   updateChunkStatus,
   updateTaskStatus
 } from "../store/task-store";
-import { parseChunkRef, type ForemanChunk, type ForemanTask } from "../store/schema";
+import { parseChunkRef, type ChunkNote, type ForemanChunk, type ForemanTask } from "../store/schema";
 
 export type WriteFn = (text: string) => void;
 
@@ -108,7 +108,7 @@ function createTaskCommand(json: boolean, io: CliIo): Command {
         description: options.description
       });
 
-      writeData(json, io, `Added task ${newTask.id}\n`, { task: newTask });
+      writeData(json, io, `Added task ${newTask.id}\n`, { task: toJsonTask(newTask) });
     });
 
   configureCommand(task.command("list"), io)
@@ -118,7 +118,7 @@ function createTaskCommand(json: boolean, io: CliIo): Command {
       const repoRoot = findRepoRoot();
       const tasks = listTasks(repoRoot, options.status);
 
-      writeData(json, io, renderTaskList(tasks), { tasks });
+      writeData(json, io, renderTaskList(tasks), { tasks: tasks.map(toJsonTask) });
     });
 
   configureCommand(task.command("show"), io)
@@ -128,7 +128,7 @@ function createTaskCommand(json: boolean, io: CliIo): Command {
       const repoRoot = findRepoRoot();
       const taskRecord = readTask(repoRoot, id);
 
-      writeData(json, io, renderTaskShow(taskRecord), { task: taskRecord });
+      writeData(json, io, renderTaskShow(taskRecord), { task: toJsonTask(taskRecord) });
     });
 
   configureCommand(task.command("status"), io)
@@ -139,7 +139,9 @@ function createTaskCommand(json: boolean, io: CliIo): Command {
       const repoRoot = findRepoRoot();
       const taskRecord = updateTaskStatus(repoRoot, id, status);
 
-      writeData(json, io, `Updated task ${taskRecord.id} status to ${taskRecord.status}\n`, { task: taskRecord });
+      writeData(json, io, `Updated task ${taskRecord.id} status to ${taskRecord.status}\n`, {
+        task: toJsonTask(taskRecord)
+      });
     });
 
   return task;
@@ -167,7 +169,7 @@ function createChunkCommand(json: boolean, io: CliIo): Command {
         spec: readSpecFile(options.specFile)
       });
 
-      writeData(json, io, `Added chunk ${taskId}/${newChunk.id}\n`, { task_id: taskId, chunk: newChunk });
+      writeData(json, io, `Added chunk ${taskId}/${newChunk.id}\n`, { task_id: taskId, chunk: toJsonChunk(newChunk) });
     });
 
   configureCommand(chunk.command("list"), io)
@@ -177,7 +179,7 @@ function createChunkCommand(json: boolean, io: CliIo): Command {
       const repoRoot = findRepoRoot();
       const chunks = listChunks(repoRoot, taskId);
 
-      writeData(json, io, renderChunkList(chunks), { task_id: taskId, chunks });
+      writeData(json, io, renderChunkList(chunks), { task_id: taskId, chunks: chunks.map(toJsonChunk) });
     });
 
   configureCommand(chunk.command("status"), io)
@@ -191,7 +193,7 @@ function createChunkCommand(json: boolean, io: CliIo): Command {
 
       writeData(json, io, `Updated chunk ${ref} status to ${updatedChunk.status}\n`, {
         task_id: chunkRef.taskId,
-        chunk: updatedChunk
+        chunk: toJsonChunk(updatedChunk)
       });
     });
 
@@ -206,7 +208,7 @@ function createChunkCommand(json: boolean, io: CliIo): Command {
 
       writeData(json, io, `Updated chunk ${ref} stage to ${updatedChunk.stage}\n`, {
         task_id: chunkRef.taskId,
-        chunk: updatedChunk
+        chunk: toJsonChunk(updatedChunk)
       });
     });
 
@@ -227,8 +229,8 @@ function createChunkCommand(json: boolean, io: CliIo): Command {
 
       writeData(json, io, `Added note to chunk ${ref}\n`, {
         task_id: chunkRef.taskId,
-        chunk: updatedChunk,
-        note
+        chunk: toJsonChunk(updatedChunk),
+        note: note === undefined ? null : toJsonNote(note)
       });
     });
 
@@ -329,6 +331,41 @@ function readSpecFile(path: string | undefined): string {
     const message = error instanceof Error ? error.message : String(error);
     throw new CliError(2, "spec_file_read_failed", `failed to read spec file '${path}': ${message}`);
   }
+}
+
+function toJsonTask(task: ForemanTask) {
+  return {
+    schema_version: task.schema_version,
+    id: task.id,
+    title: task.title,
+    source_ref: task.source_ref,
+    description: task.description,
+    status: task.status,
+    created_at: task.created_at,
+    updated_at: task.updated_at,
+    chunks: task.chunks.map(toJsonChunk)
+  };
+}
+
+function toJsonChunk(chunk: ForemanChunk) {
+  return {
+    id: chunk.id,
+    title: chunk.title,
+    spec: chunk.spec,
+    status: chunk.status,
+    stage: chunk.stage,
+    created_at: chunk.created_at,
+    updated_at: chunk.updated_at,
+    notes: chunk.notes.map(toJsonNote)
+  };
+}
+
+function toJsonNote(note: ChunkNote) {
+  return {
+    ts: note.ts,
+    author: note.author,
+    body: note.body
+  };
 }
 
 function resolveNoteAuthor(repoRoot: string, explicitAuthor: string | undefined): string {
