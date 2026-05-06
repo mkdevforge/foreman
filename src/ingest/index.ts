@@ -6,6 +6,13 @@ export type {
   ParsedUsage
 } from "./types";
 export {
+  hashPromptContent,
+  hashToolCallParams,
+  ingestParsedSession,
+  type IngestParsedSessionOptions,
+  type IngestParsedSessionResult
+} from "./common";
+export {
   parseClaudeCodeStopPayload,
   parseClaudeCodeTranscript,
   parseClaudeCodeTranscriptFile,
