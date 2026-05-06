@@ -434,6 +434,8 @@ The user has placed a clone of [thedotmack/claude-mem](https://github.com/thedot
 
 There may also be reference value in [hatayama/codex-hooks](https://github.com/hatayama/codex-hooks) for understanding how Codex's session JSONL format differs from Claude Code's.
 
+The user has also placed OpenAI Symphony reference material in `./references/symphony/`. Use it as product/design reference for Foreman's future dispatch and human-gate end state. It is reference material only: do not import, copy, or vendor code from it. v0 should only preserve room for those dispatch primitives where already planned, such as unknown task/chunk YAML fields.
+
 ### What to study from claude-mem
 - Transcript JSONL parsing for Claude Code (their `src/` has the patterns)
 - Tool call detection in CC transcripts (`tool_use` / `tool_result` pairing by `tool_use_id`)
