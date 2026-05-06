@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
 
-import { runHookStub } from "./src/hook/runtime";
+import { runForemanHook } from "./src/hook/runtime";
 
-const result = runHookStub("foreman-hook-stop-codex", process.argv.slice(2), {
+const result = await runForemanHook("foreman-hook-stop-codex", process.argv.slice(2), {
   stdout: process.stdout.write.bind(process.stdout),
   stderr: process.stderr.write.bind(process.stderr)
 });

@@ -1,6 +1,7 @@
 import { Command, CommanderError } from "commander";
 import type { Database } from "bun:sqlite";
 import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { CliError, type ExitCode } from "./errors";
 import { formatJsonData, formatJsonError, renderTextError } from "./output";
 import { openForemanDatabase } from "../db/client";
@@ -21,6 +22,13 @@ import {
 } from "../db/session-queries";
 import { findRepoRoot, getGitUserEmail } from "../store/repo";
 import {
+  clearActiveContext,
+  getActiveContextStatus,
+  writeActiveContext,
+  type ActiveContext,
+  type ActiveContextStatus
+} from "../store/active";
+import {
   addChunk,
   addTask,
   appendChunkNote,
@@ -32,7 +40,15 @@ import {
   updateChunkStatus,
   updateTaskStatus
 } from "../store/task-store";
-import { parseChunkRef, type ChunkNote, type ForemanChunk, type ForemanTask } from "../store/schema";
+import {
+  assertValidChunkStage,
+  parseChunkRef,
+  type ChunkNote,
+  type ChunkStage,
+  type ForemanChunk,
+  type ForemanTask
+} from "../store/schema";
+import { installForemanHooks, parseInstallTool } from "../hook/install";
 
 export type WriteFn = (text: string) => void;
 
@@ -95,6 +111,47 @@ function createProgram(json: boolean, io: CliIo): Command {
         foreman_dir: paths.foremanDir,
         tasks_dir: paths.tasksDir
       });
+    });
+
+  program
+    .command("install")
+    .description("Install Foreman Stop hooks for supported agent tools.")
+    .option("--tool <tool>", "claude-code, codex, or all")
+    .action((options: { tool?: string }) => {
+      const result = installForemanHooks({ tool: parseInstallTool(options.tool) });
+
+      writeData(json, io, renderInstallResult(result.installed_tools), { ...result });
+    });
+
+  program
+    .command("work")
+    .description("Set the active Foreman task/chunk context for Stop hook linkage.")
+    .argument("<task>/<chunk>")
+    .option("--stage <stage>")
+    .option("--project <path>")
+    .action((ref: string, options: { stage?: string; project?: string }) => {
+      const active = createActiveContext(ref, options);
+      writeActiveContext(active);
+
+      writeData(json, io, renderWorkResult(active), { active });
+    });
+
+  program
+    .command("stop")
+    .description("Clear the active Foreman task/chunk context.")
+    .action(() => {
+      const cleared = clearActiveContext();
+
+      writeData(json, io, "Cleared active Foreman work context.\n", { active: null, cleared });
+    });
+
+  program
+    .command("status")
+    .description("Show the active Foreman task/chunk context.")
+    .action(() => {
+      const status = getActiveContextStatus();
+
+      writeData(json, io, renderActiveStatus(status), toJsonActiveStatus(status));
     });
 
   program.addCommand(createTaskCommand(json, io));
@@ -422,6 +479,99 @@ function readSpecFile(path: string | undefined): string {
     const message = error instanceof Error ? error.message : String(error);
     throw new CliError(2, "spec_file_read_failed", `failed to read spec file '${path}': ${message}`);
   }
+}
+
+function createActiveContext(ref: string, options: { stage?: string; project?: string }): ActiveContext {
+  const controlRepoRoot = findRepoRoot();
+  const chunkRef = parseChunkRef(ref);
+  const task = readTask(controlRepoRoot, chunkRef.taskId);
+  const chunk = task.chunks.find((candidate) => candidate.id === chunkRef.chunkId);
+  if (chunk === undefined) {
+    throw new CliError(2, "chunk_not_found", `chunk '${ref}' was not found`);
+  }
+
+  let stageOverride: ChunkStage | null = null;
+  if (options.stage !== undefined) {
+    assertValidChunkStage(options.stage);
+    stageOverride = options.stage;
+  }
+
+  return {
+    schema_version: 1,
+    task_id: chunkRef.taskId,
+    chunk_id: chunkRef.chunkId,
+    stage: stageOverride ?? chunk.stage,
+    stage_override: stageOverride,
+    control_repo_root: controlRepoRoot,
+    project_path: resolveProjectRoot(controlRepoRoot, options.project),
+    created_at: new Date().toISOString()
+  };
+}
+
+function resolveProjectRoot(controlRepoRoot: string, projectPath: string | undefined): string {
+  if (projectPath === undefined) {
+    return controlRepoRoot;
+  }
+
+  return findRepoRoot(resolve(controlRepoRoot, projectPath));
+}
+
+function renderInstallResult(tools: string[]): string {
+  return `Installed Foreman hooks for ${tools.join(", ")}.\n`;
+}
+
+function renderWorkResult(active: ActiveContext): string {
+  return [
+    `Set active Foreman work context to ${active.task_id}/${active.chunk_id}.`,
+    `Stage: ${active.stage}`,
+    `Control repo: ${active.control_repo_root}`,
+    `Project path: ${active.project_path}`,
+    ""
+  ].join("\n");
+}
+
+function renderActiveStatus(status: ActiveContextStatus): string {
+  if (status.read.kind === "missing") {
+    return "No active Foreman work context.\n";
+  }
+
+  if (status.read.kind === "invalid") {
+    return [
+      "Active Foreman work context is invalid.",
+      `Path: ${status.read.path}`,
+      `Error: ${status.read.error}`,
+      ""
+    ].join("\n");
+  }
+
+  const active = status.read.context;
+  return [
+    "Active Foreman work context",
+    `Task: ${active.task_id}`,
+    `Chunk: ${active.chunk_id}`,
+    `Stage: ${active.stage}`,
+    `Stage override: ${active.stage_override ?? "null"}`,
+    `Control repo: ${active.control_repo_root}`,
+    `Project path: ${active.project_path}`,
+    `Created: ${active.created_at}`,
+    `Stale: ${status.stale ? "yes" : "no"} (${status.staleAfterHours}h)`,
+    ""
+  ].join("\n");
+}
+
+function toJsonActiveStatus(status: ActiveContextStatus) {
+  return {
+    active: status.read.kind === "valid" ? status.read.context : null,
+    stale: status.stale,
+    stale_after_hours: status.staleAfterHours,
+    invalid:
+      status.read.kind === "invalid"
+        ? {
+            path: status.read.path,
+            error: status.read.error
+          }
+        : null
+  };
 }
 
 function withForemanDatabase<T>(read: (db: Database) => T): T {

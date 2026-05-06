@@ -1,23 +1,21 @@
 # Phase 4: Hooks and Active Linkage
 
-Backlog review: Unreviewed. Review this phase before implementation starts.
+Backlog review: Reviewed.
 
 ## Goal
 
 Connect ingestion to real Stop hook entry points and the soft active-context file. By the end of this phase, Claude Code and Codex Stop hooks can ingest sessions, log failures without blocking, and link sessions to active chunks when the session worktree matches the active context.
 
-## Decision Gates
+## Resolved Decisions
 
-Close these in `docs/backlog/progress.md` before implementation starts:
-
-- Codex hook config location.
-- Active context staleness policy.
+- Codex hook config location: install user-level Codex hooks to `~/.codex/hooks.json`, and ensure `[features] codex_hooks = true` in `~/.codex/config.toml` when needed. This follows current Codex docs that support both JSON and TOML hook definitions but recommend one representation per config layer.
+- Active context staleness policy: active contexts older than 24 hours are stale for hook linkage. `foreman status` still shows stale active context clearly instead of hiding or auto-clearing it.
 
 ## Scope
 
 - Implement active-context storage at `~/.foreman/active.json`.
 - Implement active-context commands:
-  - `foreman work <task>/<chunk> [--stage ...]`
+  - `foreman work <task>/<chunk> [--stage ...] [--project <path>]`
   - `foreman stop`
   - `foreman status`
 - Validate active context against existing repo task/chunk YAML.
@@ -54,10 +52,13 @@ Close these in `docs/backlog/progress.md` before implementation starts:
 ## Implementation Notes
 
 - `foreman work` may accept `--stage` as a session-only override; it should not mutate the chunk YAML stage unless the user separately calls `foreman chunk stage`.
+- `foreman work --project <path>` records the actual session worktree path after resolving it to a Git root. Without `--project`, the current control repo Git root is used.
 - Hook linkage should write `linked_by = 'hook'`.
 - If `project_path` does not match, ingestion should still store the session and skip only the chunk link.
 - Foreman must support agent sessions running in Git worktrees. The preferred layout is a Foreman control worktree plus sibling agent worktrees. Active context should preserve both the control repo root and the actual session worktree path instead of assuming they are identical.
 - Hook config installation must be idempotent and avoid duplicate commands.
+- Hook runtime should always exit `0` after non-help execution and write failures to `~/.foreman/logs/hook-errors.log` without emitting stdout/stderr.
+- If base ingestion succeeds but summary generation fails, preserve the captured session and any eligible active link, then log the summary failure.
 - Tests should write hook config files under temporary home directories.
 
 ## Test Checkpoint
@@ -65,6 +66,7 @@ Close these in `docs/backlog/progress.md` before implementation starts:
 The phase is complete when automated tests cover:
 
 - `foreman work` writes valid active context.
+- `foreman work --project` records a sibling worktree project path.
 - `foreman stop` clears active context.
 - `foreman status` reads active context without DB writes.
 - Active context rejects missing task/chunk references.

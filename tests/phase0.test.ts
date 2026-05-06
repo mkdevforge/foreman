@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runForemanCli } from "../src/cli/runtime";
-import { runHookStub } from "../src/hook/runtime";
+import { runForemanHook } from "../src/hook/runtime";
 
 const repoRoot = fileURLToPath(new URL("../", import.meta.url));
 const decoder = new TextDecoder();
@@ -21,17 +24,30 @@ function runCli(argv: string[]) {
   return { ...result, stdout, stderr };
 }
 
-function runHook(argv: string[], name: "foreman-hook-stop-claude-code" | "foreman-hook-stop-codex") {
+async function runHook(
+  argv: string[],
+  name: "foreman-hook-stop-claude-code" | "foreman-hook-stop-codex",
+  options: { stdin?: string; homeDir?: string } = {}
+) {
   let stdout = "";
   let stderr = "";
-  const result = runHookStub(name, argv, {
-    stdout: (text) => {
-      stdout += text;
+
+  const result = await runForemanHook(
+    name,
+    argv,
+    {
+      stdout: (text) => {
+        stdout += text;
+      },
+      stderr: (text) => {
+        stderr += text;
+      }
     },
-    stderr: (text) => {
-      stderr += text;
+    {
+      stdin: () => options.stdin ?? "",
+      homeDir: options.homeDir
     }
-  });
+  );
 
   return { ...result, stdout, stderr };
 }
@@ -150,31 +166,38 @@ describe("package bin entrypoints", () => {
 });
 
 describe("hook stubs", () => {
-  test("claude-code hook prints help", () => {
-    const result = runHook(["--help"], "foreman-hook-stop-claude-code");
+  test("claude-code hook prints help", async () => {
+    const result = await runHook(["--help"], "foreman-hook-stop-claude-code");
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain("foreman-hook-stop-claude-code");
-    expect(result.stdout).toContain("Phase 0 stub");
+    expect(result.stdout).toContain("Stop hook entry point");
     expect(result.stderr).toBe("");
   });
 
-  test("codex hook prints help", () => {
-    const result = runHook(["--help"], "foreman-hook-stop-codex");
+  test("codex hook prints help", async () => {
+    const result = await runHook(["--help"], "foreman-hook-stop-codex");
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain("foreman-hook-stop-codex");
-    expect(result.stdout).toContain("Phase 0 stub");
+    expect(result.stdout).toContain("Stop hook entry point");
     expect(result.stderr).toBe("");
   });
 
-  test("hook stubs return not implemented without writing domain files", () => {
-    const result = runHook([], "foreman-hook-stop-codex");
-    const parsed = JSON.parse(runHook(["--json"], "foreman-hook-stop-codex").stderr);
+  test("hooks swallow malformed payloads and log without blocking", async () => {
+    const homeDir = mkdtempSync(join(tmpdir(), "foreman-hook-foundation-"));
 
-    expect(result.exitCode).toBe(2);
-    expect(result.stderr).toContain("not implemented");
-    expect(parsed.schema_version).toBe(1);
-    expect(parsed.error.code).toBe("not_implemented");
+    try {
+      const result = await runHook([], "foreman-hook-stop-codex", { stdin: "not-json", homeDir });
+      const logPath = join(homeDir, ".foreman", "logs", "hook-errors.log");
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toBe("");
+      expect(existsSync(logPath)).toBe(true);
+      expect(readFileSync(logPath, "utf8")).toContain("parse_payload_json");
+    } finally {
+      rmSync(homeDir, { recursive: true, force: true });
+    }
   });
 });

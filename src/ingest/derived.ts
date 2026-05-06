@@ -1,4 +1,5 @@
-import type { Database, SQLQueryBindings } from "bun:sqlite";
+import type { Database } from "bun:sqlite";
+import { updateSessionCost, upsertSessionSummary } from "../db/session-writes";
 import { ingestParsedSession, type IngestParsedSessionOptions, type IngestParsedSessionResult } from "./common";
 import { estimateUsageCost, type CostEstimate } from "./pricing";
 import {
@@ -23,10 +24,6 @@ export interface IngestParsedSessionWithDerivedDataResult extends IngestParsedSe
   pricing_model: string | null;
 }
 
-interface SqlRunResult {
-  changes: number;
-}
-
 export async function ingestParsedSessionWithDerivedData(
   db: Database,
   parsed: ParsedSession,
@@ -40,8 +37,8 @@ export async function ingestParsedSessionWithDerivedData(
   const generatedAt = (options.now ?? defaultNow)();
 
   const writeDerived = db.transaction(() => {
-    updateUsageCost(db, baseResult.session_id, costEstimate.cost_usd);
-    upsertSummary(db, {
+    updateSessionCost(db, baseResult.session_id, costEstimate.cost_usd);
+    upsertSessionSummary(db, {
       sessionId: baseResult.session_id,
       summaryMd: summaryResult.summary_md,
       modelUsed: summaryResult.model_used,
@@ -59,35 +56,6 @@ export async function ingestParsedSessionWithDerivedData(
     pricing_model: costEstimate.pricing_model,
     warnings: mergeWarnings(baseResult.warnings, costEstimate, summaryResult.warnings ?? [])
   };
-}
-
-function updateUsageCost(db: Database, sessionId: string, costUsd: number): void {
-  runSql(db, "UPDATE usage SET cost_usd = ? WHERE session_id = ?", [costUsd, sessionId]);
-}
-
-function upsertSummary(
-  db: Database,
-  input: { sessionId: string; summaryMd: string; modelUsed: string; generatedAt: string }
-): void {
-  runSql(
-    db,
-    `INSERT INTO summaries (
-      session_id,
-      summary_md,
-      model_used,
-      generated_at
-    ) VALUES (?, ?, ?, ?)
-    ON CONFLICT(session_id) DO UPDATE SET
-      summary_md = excluded.summary_md,
-      model_used = excluded.model_used,
-      generated_at = excluded.generated_at`,
-    [input.sessionId, input.summaryMd, input.modelUsed, input.generatedAt]
-  );
-}
-
-function runSql(db: Database, sql: string, params: SQLQueryBindings[] = []): number {
-  const result = db.prepare<unknown, SQLQueryBindings[]>(sql).run(...params) as SqlRunResult;
-  return result.changes;
 }
 
 function mergeWarnings(
