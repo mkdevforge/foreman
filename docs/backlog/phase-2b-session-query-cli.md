@@ -81,4 +81,4 @@ HOME=/tmp/foreman-home foreman session list --json
 
 - Phase 2b checkpoint passes.
 - `docs/backlog/progress.md` marks Phase 2b as `Done`.
-- Production ingestion APIs are still deferred to Phase 3.
+- Production ingestion APIs are still deferred to Phases 3a, 3b, and 3c.

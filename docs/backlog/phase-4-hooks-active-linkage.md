@@ -4,7 +4,7 @@ Backlog review: Unreviewed. Review this phase before implementation starts.
 
 ## Goal
 
-Connect ingestion to real Stop hook entry points and the soft active-context file. By the end of this phase, Claude Code and Codex Stop hooks can ingest sessions, log failures without blocking, and link sessions to active chunks when the project path matches.
+Connect ingestion to real Stop hook entry points and the soft active-context file. By the end of this phase, Claude Code and Codex Stop hooks can ingest sessions, log failures without blocking, and link sessions to active chunks when the session worktree matches the active context.
 
 ## Decision Gates
 
@@ -25,7 +25,8 @@ Close these in `docs/backlog/progress.md` before implementation starts:
   - task id
   - chunk id
   - stage override, if provided
-  - project path
+  - session project path, which may be a sibling worktree
+  - Foreman control repo root, where task YAML was validated
   - timestamp
 - Implement hook binaries:
   - `foreman-hook-stop-claude-code`
@@ -39,7 +40,7 @@ Close these in `docs/backlog/progress.md` before implementation starts:
 - Link ingested sessions to active chunks when:
   - active context exists
   - active context is not stale under the recorded policy
-  - hook project path matches active `project_path`
+  - hook/session project path matches active `project_path`
 - Implement `foreman install [--tool claude-code|codex|all]`.
 - Preserve unrelated existing hook config entries during installation.
 
@@ -55,6 +56,7 @@ Close these in `docs/backlog/progress.md` before implementation starts:
 - `foreman work` may accept `--stage` as a session-only override; it should not mutate the chunk YAML stage unless the user separately calls `foreman chunk stage`.
 - Hook linkage should write `linked_by = 'hook'`.
 - If `project_path` does not match, ingestion should still store the session and skip only the chunk link.
+- Foreman must support agent sessions running in Git worktrees. The preferred layout is a Foreman control worktree plus sibling agent worktrees. Active context should preserve both the control repo root and the actual session worktree path instead of assuming they are identical.
 - Hook config installation must be idempotent and avoid duplicate commands.
 - Tests should write hook config files under temporary home directories.
 
@@ -72,6 +74,7 @@ The phase is complete when automated tests cover:
 - Matching active context creates one `session_chunks` row.
 - Re-running the same hook does not duplicate the link.
 - Mismatched project paths skip only linkage.
+- Sibling worktree active context links when the session path matches the recorded sibling worktree and task YAML was validated from the control repo.
 - Claude Code install is idempotent and preserves unrelated settings.
 - Codex install is idempotent and preserves unrelated settings.
 

@@ -46,7 +46,7 @@ Implement the supervisor-facing commands that join repo-scoped task YAML with us
 
 ## Implementation Notes
 
-- By default, catalog should filter unattached sessions to the current repo's `project_path`.
+- By default, catalog should include unattached sessions from the current Foreman repo and its sibling worktrees. Prefer repo identity such as `repo_remote` when available; fall back to exact `project_path` only when no reliable repo identity is available.
 - `--all` should remove the project-path filter but keep other filters.
 - Catalog links should use `linked_by = 'catalog'` for both interactive and one-shot catalog flows.
 - Reserve `linked_by = 'manual'` for a future explicit manual-link surface unless the PRD is updated.
@@ -62,6 +62,7 @@ The phase is complete when automated tests cover:
 - Task review roll-up and cost totals.
 - JSON output for chunk and task review.
 - Catalog listing unattached current-repo sessions.
+- Catalog listing unattached sessions from sibling worktrees that share the current repo identity.
 - Catalog `--all` including other projects.
 - Interactive catalog link and skip paths with mocked stdin.
 - Catalog one-shot link and unlink.

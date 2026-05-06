@@ -26,7 +26,9 @@ This tracker is the single status file for the v0 backlog. Update it whenever a 
 | 1b | [Chunk lifecycle](phase-1b-chunk-lifecycle.md) | Done | Reviewed | Chunks can change status/stage and append review notes. |
 | 2a | [SQLite schema](phase-2a-sqlite-schema.md) | Done | Reviewed | SQLite schema, migrations, indexes, and constraints work. |
 | 2b | [Session query CLI](phase-2b-session-query-cli.md) | Done | Reviewed | Seeded session data can be listed, shown, filtered, and resolved by prefix. |
-| 3 | [Transcript ingestion](phase-3-transcript-ingestion.md) | Not started | Unreviewed | Claude Code and Codex fixture transcripts ingest idempotently with mocked summaries. |
+| 3a | [Transcript fixtures and parsers](phase-3a-transcript-fixtures-parsers.md) | Not started | Reviewed | Claude Code and Codex fixture transcripts parse into normalized sessions. |
+| 3b | [Common ingestion](phase-3b-common-ingestion.md) | Not started | Unreviewed | Parsed sessions persist idempotently into SQLite. |
+| 3c | [Summary, truncation, and pricing](phase-3c-summary-truncation-pricing.md) | Not started | Unreviewed | Mocked summaries, truncation, and pricing work without network. |
 | 4 | [Hooks and active linkage](phase-4-hooks-active-linkage.md) | Not started | Unreviewed | Stop hooks install idempotently, never block on errors, and link active chunks. |
 | 5 | [Review and catalog CLI](phase-5-review-catalog-cli.md) | Not started | Unreviewed | Review, catalog, and session cost commands join repo YAML with session DB. |
 | 6 | [v0 hardening](phase-6-v0-hardening.md) | Not started | Unreviewed | All v0 acceptance criteria pass in automated and manual end-to-end checks. |
@@ -50,12 +52,13 @@ Track implementation-blocking decisions here. Close each decision before impleme
 | Task YAML extensibility policy | Phase 1c | Closed 2026-05-06 | v0 readers/writers validate known fields but preserve unknown task-level and chunk-level YAML fields for future dispatch metadata. |
 | Note author fallback | Phase 1b | Closed 2026-05-05 | `chunk note` uses `git config user.email` by default, allows `--author <email>`, and errors if neither is available. |
 | Duration filter syntax | Phase 2b | Closed 2026-05-05 | `--since` accepts compact relative durations with units `m`, `h`, `d`, and `w`, such as `30m`, `24h`, `7d`, or `2w`. |
-| Summary provider for v0 | Phase 3 | Open | PRD recommends Anthropic Haiku for all summaries, but implementation should record the final choice before coding provider bindings. |
+| Worktree support policy | Phases 3a, 3b, 4, 5 | Closed 2026-05-06 | Store the actual session worktree path as `project_path`; task YAML may live in a separate Foreman control worktree, with sibling worktrees preferred. Later linkage/review must not assume session cwd and task metadata root are the same path. |
+| Summary provider for v0 | Phase 3c | Open | PRD recommends Anthropic Haiku for all summaries, but implementation should record the final choice before coding provider bindings. |
 | Codex hook config location | Phase 4 | Open | PRD requires checking current Codex hook docs at implementation time and choosing one consistent config format. |
-| Summary truncation strategy details | Phase 3 | Open | PRD recommends head + tail with an elision marker and an approximate 50k-token cap. |
-| Codex tool-call pairing format | Phase 3 | Open | Must be documented from actual Codex JSONL fixtures or current docs before parser behavior is finalized. |
+| Summary truncation strategy details | Phase 3c | Open | PRD recommends head + tail with an elision marker and an approximate 50k-token cap. |
+| Codex tool-call pairing format | Phase 3a | Open | Must be documented from actual Codex JSONL fixtures or current docs before parser behavior is finalized. |
 | Active context staleness policy | Phase 4 | Open | PRD recommends ignoring active context older than 24 hours. Record final behavior before hook linkage tests are written. |
-| Pricing table scope and location | Phase 3 | Open | PRD allows inline hardcoded pricing for v0 with a migration path comment. |
+| Pricing table scope and location | Phase 3c | Open | PRD allows inline hardcoded pricing for v0 with a migration path comment. |
 
 ## Acceptance Criteria Map
 
@@ -66,15 +69,15 @@ Track implementation-blocking decisions here. Close each decision before impleme
 | 3. `foreman init` creates `.foreman/` in the current repo. | Phase 1a | Done |
 | 4. `task add` and `chunk add` create well-formed YAML that round-trips. | Phase 1a | Done |
 | 4a. v0 task and chunk mutations preserve unknown YAML fields for future dispatch metadata. | Phases 1c, 1b, 6 | Done |
-| 5. Claude Code Stop hook ingests and links an active chunk. | Phases 3, 4, 6 | Not started |
-| 6. Codex Stop hook ingests and links an active chunk. | Phases 3, 4, 6 | Not started |
+| 5. Claude Code Stop hook ingests and links an active chunk. | Phases 3a, 3b, 3c, 4, 6 | Not started |
+| 6. Codex Stop hook ingests and links an active chunk. | Phases 3a, 3b, 3c, 4, 6 | Not started |
 | 7. `foreman review <task>/<chunk>` shows chunk metadata plus linked sessions. | Phase 5 | Not started |
 | 8. `foreman catalog` lists unattached sessions and supports interactive linking. | Phase 5 | Not started |
 | 9. `foreman session cost --by source` reports a correct source breakdown. | Phase 5 | Not started |
 | 10. All commands have valid `--json` mode. | Phases 0, 1a, 1b, 2b, 5, 6 | Not started |
-| 11. Re-running hooks does not duplicate stored rows or links. | Phases 3, 4 | Not started |
+| 11. Re-running hooks does not duplicate stored rows or links. | Phases 3b, 4 | Not started |
 | 12. Hooks log failures and exit 0. | Phase 4 | Not started |
-| 13. Basic test suite covers parsers, migrations, dedup, soft linkage, catalog flow, and output shape. | Phases 1a, 1b, 2a, 2b, 3-6 | Not started |
+| 13. Basic test suite covers parsers, migrations, dedup, soft linkage, catalog flow, and output shape. | Phases 1a, 1b, 2a, 2b, 3a-6 | Not started |
 
 ## Maintenance Rules
 
