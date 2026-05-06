@@ -1,6 +1,6 @@
 # Phase 3b: Common Ingestion
 
-Backlog review: Unreviewed. Review this phase before implementation starts.
+Backlog review: Reviewed.
 
 ## Goal
 
@@ -20,6 +20,27 @@ Persist parsed sessions from Phase 3a into the user SQLite database idempotently
 - Capture ingestion warnings for callers/tests.
 - Add test-only helpers/fixtures as needed.
 - Add `uuid` as the UUID implementation dependency.
+
+## Parsed Input Shape
+
+Phase 3b consumes the Phase 3a `ParsedSession` shape. Prompt and tool-call inputs should be persistence-free:
+
+```ts
+interface ParsedPrompt {
+  ts: string;
+  content: string;
+}
+
+interface ParsedToolCall {
+  ts: string;
+  tool_name: string;
+  params_json: string;
+  result_json: string | null;
+  is_error: boolean;
+}
+```
+
+Phase 3b derives database IDs and hashes from these records.
 
 ## Out Of Scope
 
@@ -44,6 +65,11 @@ Persist parsed sessions from Phase 3a into the user SQLite database idempotently
 - Default production ID generation uses `uuid`'s `v7()` API.
 - Tests should inject deterministic ID generation rather than relying on real UUID randomness.
 - Do not implement a first-party UUIDv7 generator.
+- Use SHA-256 from `node:crypto` for content hashes.
+- Prompt hashes are based on prompt content.
+- Tool-call hashes are based on stable JSON for the tool name and parameters.
+- Store UUIDs in SQLite as canonical `TEXT` values; SQLite does not need a native UUID type.
+- Return warnings from ingestion; hook logging is Phase 4 behavior.
 
 ## Worktree Stance
 

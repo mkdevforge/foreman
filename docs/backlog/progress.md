@@ -27,7 +27,7 @@ This tracker is the single status file for the v0 backlog. Update it whenever a 
 | 2a | [SQLite schema](phase-2a-sqlite-schema.md) | Done | Reviewed | SQLite schema, migrations, indexes, and constraints work. |
 | 2b | [Session query CLI](phase-2b-session-query-cli.md) | Done | Reviewed | Seeded session data can be listed, shown, filtered, and resolved by prefix. |
 | 3a | [Transcript fixtures and parsers](phase-3a-transcript-fixtures-parsers.md) | Not started | Reviewed | Claude Code and Codex fixture transcripts parse into normalized sessions. |
-| 3b | [Common ingestion](phase-3b-common-ingestion.md) | Not started | Unreviewed | Parsed sessions persist idempotently into SQLite. |
+| 3b | [Common ingestion](phase-3b-common-ingestion.md) | Not started | Reviewed | Parsed sessions persist idempotently into SQLite. |
 | 3c | [Summary, truncation, and pricing](phase-3c-summary-truncation-pricing.md) | Not started | Unreviewed | Mocked summaries, truncation, and pricing work without network. |
 | 4 | [Hooks and active linkage](phase-4-hooks-active-linkage.md) | Not started | Unreviewed | Stop hooks install idempotently, never block on errors, and link active chunks. |
 | 5 | [Review and catalog CLI](phase-5-review-catalog-cli.md) | Not started | Unreviewed | Review, catalog, and session cost commands join repo YAML with session DB. |
