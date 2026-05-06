@@ -18,7 +18,6 @@ export interface CliResult {
 }
 
 interface GlobalFlags {
-  help: boolean;
   json: boolean;
   argv: string[];
 }
@@ -26,11 +25,6 @@ interface GlobalFlags {
 export function runForemanCli(argv: string[], io: CliIo): CliResult {
   const globals = extractGlobalFlags(argv);
   const program = createProgram(globals.json, io);
-
-  if (globals.help) {
-    io.stdout(program.helpInformation());
-    return { exitCode: 0 };
-  }
 
   try {
     program.parse(globals.argv, { from: "user" });
@@ -42,6 +36,10 @@ export function runForemanCli(argv: string[], io: CliIo): CliResult {
 
     return { exitCode: 0 };
   } catch (error) {
+    if (isCommanderHelp(error)) {
+      return { exitCode: 0 };
+    }
+
     const cliError = normalizeError(error, globals.argv);
     writeError(cliError, globals.json, io);
     return { exitCode: cliError.exitCode };
@@ -49,16 +47,13 @@ export function runForemanCli(argv: string[], io: CliIo): CliResult {
 }
 
 function createProgram(json: boolean, io: CliIo): Command {
-  const program = new Command()
-    .name("foreman")
-    .description("Supervisor-first CLI for managing AI coding agents.")
-    .helpOption(false)
-    .exitOverride()
-    .showHelpAfterError(false)
-    .configureOutput({
-      writeOut: () => undefined,
-      writeErr: () => undefined
-    });
+  const program = configureCommand(
+    new Command()
+      .name("foreman")
+      .description("Supervisor-first CLI for managing AI coding agents.")
+      .helpOption("-h, --help", "display help for command"),
+    io
+  );
 
   program
     .command("init")
@@ -81,14 +76,13 @@ function createProgram(json: boolean, io: CliIo): Command {
 }
 
 function createTaskCommand(json: boolean, io: CliIo): Command {
-  const task = new Command("task")
+  const task = configureCommand(new Command("task"), io)
     .description("Manage repo-scoped tasks.")
     .action(() => {
       throw new CliError(2, "missing_command", "missing task command");
     });
 
-  task
-    .command("add")
+  configureCommand(task.command("add"), io)
     .description("Create a task YAML file.")
     .argument("<id>")
     .requiredOption("--title <title>")
@@ -106,8 +100,7 @@ function createTaskCommand(json: boolean, io: CliIo): Command {
       writeData(json, io, `Added task ${newTask.id}\n`, { task: newTask });
     });
 
-  task
-    .command("list")
+  configureCommand(task.command("list"), io)
     .description("List task YAML files.")
     .option("--status <status>")
     .action((options: { status?: string }) => {
@@ -117,8 +110,7 @@ function createTaskCommand(json: boolean, io: CliIo): Command {
       writeData(json, io, renderTaskList(tasks), { tasks });
     });
 
-  task
-    .command("show")
+  configureCommand(task.command("show"), io)
     .description("Show a task YAML file.")
     .argument("<id>")
     .action((id: string) => {
@@ -128,8 +120,7 @@ function createTaskCommand(json: boolean, io: CliIo): Command {
       writeData(json, io, renderTaskShow(taskRecord), { task: taskRecord });
     });
 
-  task
-    .command("status")
+  configureCommand(task.command("status"), io)
     .description("Update task status.")
     .argument("<id>")
     .argument("<status>")
@@ -144,14 +135,13 @@ function createTaskCommand(json: boolean, io: CliIo): Command {
 }
 
 function createChunkCommand(json: boolean, io: CliIo): Command {
-  const chunk = new Command("chunk")
+  const chunk = configureCommand(new Command("chunk"), io)
     .description("Manage task chunks.")
     .action(() => {
       throw new CliError(2, "missing_command", "missing chunk command");
     });
 
-  chunk
-    .command("add")
+  configureCommand(chunk.command("add"), io)
     .description("Create a chunk under a task.")
     .argument("<task>/<chunk>")
     .requiredOption("--title <title>")
@@ -169,8 +159,7 @@ function createChunkCommand(json: boolean, io: CliIo): Command {
       writeData(json, io, `Added chunk ${taskId}/${newChunk.id}\n`, { task_id: taskId, chunk: newChunk });
     });
 
-  chunk
-    .command("list")
+  configureCommand(chunk.command("list"), io)
     .description("List chunks for a task.")
     .argument("<task>")
     .action((taskId: string) => {
@@ -183,17 +172,21 @@ function createChunkCommand(json: boolean, io: CliIo): Command {
   return chunk;
 }
 
+function configureCommand(command: Command, io: CliIo): Command {
+  return command
+    .exitOverride()
+    .showHelpAfterError(false)
+    .configureOutput({
+      writeOut: io.stdout,
+      writeErr: () => undefined
+    });
+}
+
 function extractGlobalFlags(argv: string[]): GlobalFlags {
   const remaining: string[] = [];
-  let help = false;
   let json = false;
 
   for (const arg of argv) {
-    if (arg === "--help" || arg === "-h") {
-      help = true;
-      continue;
-    }
-
     if (arg === "--json") {
       json = true;
       continue;
@@ -202,7 +195,11 @@ function extractGlobalFlags(argv: string[]): GlobalFlags {
     remaining.push(arg);
   }
 
-  return { help, json, argv: remaining };
+  return { json, argv: remaining };
+}
+
+function isCommanderHelp(error: unknown): boolean {
+  return error instanceof CommanderError && error.exitCode === 0;
 }
 
 function normalizeError(error: unknown, argv: string[] = []): CliError {

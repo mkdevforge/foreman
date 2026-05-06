@@ -69,6 +69,15 @@ describe("foreman CLI foundation", () => {
     expect(result.stderr).toBe("");
   });
 
+  test("prints command-specific help with exit 0", () => {
+    const result = runCli(["task", "add", "--help"]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("Usage: foreman task add");
+    expect(result.stdout).toContain("--title <title>");
+    expect(result.stderr).toBe("");
+  });
+
   test("returns exit 2 for unknown commands", () => {
     const result = runCli(["unknown-command"]);
 
@@ -105,6 +114,15 @@ describe("package bin entrypoints", () => {
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain("Usage:");
     expect(result.stdout).toContain("foreman");
+    expect(result.stderr).toBe("");
+  });
+
+  test("foreman bin prints command-specific help", () => {
+    const result = runPackageBin(["foreman", "task", "add", "--help"]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("Usage: foreman task add");
+    expect(result.stdout).toContain("--title <title>");
     expect(result.stderr).toBe("");
   });
 
