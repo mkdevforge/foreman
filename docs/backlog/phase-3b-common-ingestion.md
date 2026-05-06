@@ -19,6 +19,7 @@ Persist parsed sessions from Phase 3a into the user SQLite database idempotently
 - Preserve idempotency on re-run.
 - Capture ingestion warnings for callers/tests.
 - Add test-only helpers/fixtures as needed.
+- Add `uuid` as the UUID implementation dependency.
 
 ## Out Of Scope
 
@@ -40,6 +41,9 @@ Persist parsed sessions from Phase 3a into the user SQLite database idempotently
 - Keep ingestion helpers shaped by parsed sessions, not future hook assumptions.
 - Store interrupted tool calls with `result_json = null` and `is_error = 0`.
 - Do not duplicate prompts, tool calls, usage, summaries, or sessions when re-ingesting the same parsed session.
+- Default production ID generation uses `uuid`'s `v7()` API.
+- Tests should inject deterministic ID generation rather than relying on real UUID randomness.
+- Do not implement a first-party UUIDv7 generator.
 
 ## Worktree Stance
 
