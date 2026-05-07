@@ -1,0 +1,46 @@
+schema_version: 1
+id: FOREMAN-7
+title: Post-v0 dispatch readiness
+source_ref: null
+description: Dogfood Foreman in this repository while planning the first post-v0 dispatch and human-gate slice.
+status: todo
+created_at: 2026-05-07T17:37:17.715Z
+updated_at: 2026-05-07T17:38:54.341Z
+chunks:
+  - id: phase7a-readiness
+    title: Questions decisions readiness
+    spec: >
+      Plan and implement the first post-v0 dogfood slice for Foreman dispatch readiness.
+
+
+      Scope:
+
+      - Add YAML-backed question and decision metadata for chunks.
+
+      - Add minimal CLI commands to create/list/answer questions and record decisions.
+
+      - Add a readiness validation command that reports whether a chunk is ready for future
+      dispatch.
+
+      - Keep the implementation testable between each step and avoid launching agents or creating
+      run state in this slice.
+
+
+      Expected outcome:
+
+      - Foreman can represent human gates in its own task YAML without full dispatch runner
+      behavior.
+
+      - JSON and text outputs are stable enough for later automation.
+
+      - Existing v0 task/chunk behavior continues to preserve unknown metadata.
+    status: todo
+    stage: discovery
+    created_at: 2026-05-07T17:37:17.760Z
+    updated_at: 2026-05-07T17:38:54.341Z
+    notes:
+      - ts: 2026-05-07T17:38:54.341Z
+        body: "Dogfood setup complete: Foreman hooks installed for Claude Code and Codex, active context set
+          to this chunk, and one real session from each tool linked back through Stop hooks.
+          Observation: session list --project . did not match sessions, while the absolute project
+          path did; consider normalizing --project paths in a follow-up."
