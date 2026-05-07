@@ -2,7 +2,15 @@
 
 Source PRD: [Foreman POC PRD](../foreman-poc-prd.md)
 
-This tracker is the single status file for the v0 backlog. Update it whenever a phase starts, finishes, changes scope, or records a decision. Phase files contain the implementation details and test checkpoints.
+This tracker is the single status file for the v0 backlog. Update it only for v0 historical corrections, accepted v0 documentation fixes, or decisions that explain existing v0 behavior. Phase files contain the implementation details and test checkpoints.
+
+## Backlog System Of Record
+
+- Completed v0 planning remains in `docs/backlog/` as historical reference.
+- The active post-v0 backlog lives in `.foreman/tasks/*.yaml`.
+- Do not maintain duplicate progress state in both places.
+- Move post-v0 ideas from `docs/backlog/` into Foreman tasks only when they become actionable implementation slices.
+- Link from Foreman chunk specs back to backlog docs when long-form rationale is still useful.
 
 ## Status Legend
 
@@ -41,11 +49,11 @@ This tracker is the single status file for the v0 backlog. Update it whenever a 
 
 ## Post-v0 Backlog Seeds
 
-These are intentionally outside v0, but v0 should avoid design choices that make them harder.
+These are intentionally outside v0, but v0 should avoid design choices that make them harder. Seed docs are reference material; `.foreman/tasks/*.yaml` is the active tracker once a seed becomes implementation work.
 
 | Topic | File | Status | Notes |
 | --- | --- | --- | --- |
-| Dispatch and human gates | [future dispatch and human gates](future-dispatch-human-gates.md) | Seeded | Add a Symphony-style dispatch surface over Foreman chunks, with first-class questions, approvals, and blocked outcomes. |
+| Dispatch and human gates | [future dispatch and human gates](future-dispatch-human-gates.md) | Active in Foreman | Active slices are tracked under `.foreman/tasks/FOREMAN-7.yaml`; this doc remains product/design reference. |
 
 ## Decision Gates
 
@@ -89,7 +97,7 @@ Track implementation-blocking decisions here. Close each decision before impleme
 
 ## Maintenance Rules
 
-- Keep phase files scoped to v0. Move non-v0 ideas to a future backlog only after v0 scope is stable.
+- Keep phase files scoped to v0. Move actionable non-v0 ideas to `.foreman/tasks/*.yaml`; keep `docs/backlog/` as rationale/reference.
 - Do not mark a phase `Done` until its checkpoint has passed and the change is committed.
 - When scope changes, update this file and the affected phase file in the same commit.
 - When a decision gate closes, record the decision and the date in this file before implementing code that depends on it.

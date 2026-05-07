@@ -4,6 +4,8 @@ Status: Seeded for post-v0. Do not implement in v0.
 
 Reference: use `references/symphony/` as product/design input for the desired dispatch end state. Treat it as reference-only material; do not copy or vendor code.
 
+Active implementation tracking has moved to `.foreman/tasks/*.yaml`; current dispatch-readiness slices live in `.foreman/tasks/FOREMAN-7.yaml`. This document remains product/design reference and should not duplicate Foreman progress state.
+
 ## Goal
 
 Add a Symphony-style dispatch surface over Foreman chunks without treating tracker issues as complete implementation specs. Foreman should dispatch agent-ready chunks that carry enough context, constraints, and human decisions for quality work.
