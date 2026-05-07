@@ -49,7 +49,8 @@ Workspace ownership should be task-level, not chunk-level: one worktree/workspac
 
 ## Candidate YAML Metadata
 
-These fields are examples for the future schema. v0 must preserve unknown fields, but must not interpret these yet.
+These fields are examples for the future schema. The current storage contract is recorded in
+[`docs/dispatch-readiness-schema.md`](../dispatch-readiness-schema.md).
 
 ```yaml
 chunks:
@@ -58,8 +59,6 @@ chunks:
     spec: ...
     status: todo
     stage: plan
-    risk_level: medium
-    approval_required: plan
     questions:
       - id: q-001
         status: open
@@ -71,11 +70,10 @@ chunks:
       - id: d-001
         body: Keep refresh handling in the API boundary.
         decided_at: 2026-05-06T00:00:00.000Z
-        decided_by: user@example.com
     dispatch:
-      status: ready
-      last_run_id: null
-      attempts: []
+      status: needs_context
+      risk_level: medium
+      approval_required: plan
       allowed_actions:
         - edit_source
         - run_tests

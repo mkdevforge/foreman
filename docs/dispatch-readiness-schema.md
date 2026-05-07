@@ -1,0 +1,76 @@
+# Dispatch Readiness Schema
+
+This document records the post-v0 repo YAML shape for chunk-level human-gate metadata.
+
+The active backlog lives in `.foreman/tasks/*.yaml`. This schema is shared repo context; local identity, process state, costs, and agent session details stay in `~/.foreman/foreman.db`.
+
+## Chunk Questions
+
+Questions capture missing context as an explicit successful workflow state.
+
+```yaml
+questions:
+  - id: q-001
+    status: open
+    body: Which approval policy should this chunk use?
+    asked_at: 2026-05-07T18:00:00.000Z
+    answered_at: null
+    answer: null
+```
+
+Allowed statuses:
+
+- `open`
+- `answered`
+
+Answered questions must have both `answered_at` and `answer`. Open questions must keep both fields `null`.
+
+## Chunk Decisions
+
+Decisions are accepted human decisions that should be available to later planning and implementation prompts.
+
+```yaml
+decisions:
+  - id: d-001
+    body: Keep committed metadata separate from local execution state.
+    decided_at: 2026-05-07T18:03:00.000Z
+```
+
+Decisions do not store author identity. Git history records repo-visible authorship for committed changes.
+
+## Dispatch Readiness
+
+Dispatch readiness is a chunk-level gate, not a run record.
+
+```yaml
+dispatch:
+  status: needs_context
+  risk_level: medium
+  approval_required: plan
+  allowed_actions:
+    - edit_source
+    - run_tests
+  blocked_actions:
+    - launch_runner
+```
+
+Allowed `status` values:
+
+- `needs_context`
+- `ready`
+- `blocked`
+
+Allowed `risk_level` values:
+
+- `low`
+- `medium`
+- `high`
+
+Allowed `approval_required` values:
+
+- `none`
+- `plan`
+- `implement`
+- `review`
+
+`allowed_actions` and `blocked_actions` are lists of non-empty action labels. Future runner state and run attempts should not be stored here.

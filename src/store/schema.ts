@@ -4,13 +4,47 @@ export const SCHEMA_VERSION = 1;
 
 export const TASK_STATUSES = ["todo", "doing", "review", "done", "blocked"] as const;
 export const CHUNK_STAGES = ["discovery", "plan", "implement", "review"] as const;
+export const QUESTION_STATUSES = ["open", "answered"] as const;
+export const DISPATCH_READINESS_STATUSES = ["needs_context", "ready", "blocked"] as const;
+export const DISPATCH_RISK_LEVELS = ["low", "medium", "high"] as const;
+export const DISPATCH_APPROVAL_REQUIREMENTS = ["none", "plan", "implement", "review"] as const;
 
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 export type ChunkStage = (typeof CHUNK_STAGES)[number];
+export type QuestionStatus = (typeof QUESTION_STATUSES)[number];
+export type DispatchReadinessStatus = (typeof DISPATCH_READINESS_STATUSES)[number];
+export type DispatchRiskLevel = (typeof DISPATCH_RISK_LEVELS)[number];
+export type DispatchApprovalRequirement = (typeof DISPATCH_APPROVAL_REQUIREMENTS)[number];
 
 export interface ChunkNote {
   ts: string;
   body: string;
+  [key: string]: unknown;
+}
+
+export interface ChunkQuestion {
+  id: string;
+  status: QuestionStatus;
+  body: string;
+  asked_at: string;
+  answered_at: string | null;
+  answer: string | null;
+  [key: string]: unknown;
+}
+
+export interface ChunkDecision {
+  id: string;
+  body: string;
+  decided_at: string;
+  [key: string]: unknown;
+}
+
+export interface ChunkDispatchReadiness {
+  status: DispatchReadinessStatus;
+  risk_level: DispatchRiskLevel;
+  approval_required: DispatchApprovalRequirement;
+  allowed_actions: string[];
+  blocked_actions: string[];
   [key: string]: unknown;
 }
 
@@ -23,6 +57,9 @@ export interface ForemanChunk {
   created_at: string;
   updated_at: string;
   notes: ChunkNote[];
+  questions?: ChunkQuestion[];
+  decisions?: ChunkDecision[];
+  dispatch?: ChunkDispatchReadiness;
   [key: string]: unknown;
 }
 

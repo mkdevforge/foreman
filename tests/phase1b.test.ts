@@ -193,13 +193,13 @@ describe("foreman chunk lifecycle", () => {
     const task = readTaskYaml(repo);
 
     task.dispatch = { requires_approval: true, risk_gates: ["db-migration"] };
-    task.chunks[0].questions = [{ id: "q1", body: "Which parser owns this?" }];
+    task.chunks[0].future_questions = [{ id: "q1", body: "Which parser owns this?" }];
     task.chunks[0].run_attempts = [{ id: "attempt-1", status: "blocked" }];
     writeTaskYaml(repo, task);
 
     expect(runForeman(repo, ["chunk", "status", "FOREMAN-1/yaml-store", "doing"]).exitCode).toBe(0);
     expect(readTaskYaml(repo).dispatch).toEqual({ requires_approval: true, risk_gates: ["db-migration"] });
-    expect(readTaskYaml(repo).chunks[0].questions).toEqual([{ id: "q1", body: "Which parser owns this?" }]);
+    expect(readTaskYaml(repo).chunks[0].future_questions).toEqual([{ id: "q1", body: "Which parser owns this?" }]);
 
     expect(runForeman(repo, ["chunk", "stage", "FOREMAN-1/yaml-store", "review"]).exitCode).toBe(0);
     expect(readTaskYaml(repo).chunks[0].run_attempts).toEqual([{ id: "attempt-1", status: "blocked" }]);
@@ -210,7 +210,7 @@ describe("foreman chunk lifecycle", () => {
     const afterNote = readTaskYaml(repo);
 
     expect(afterNote.dispatch).toEqual({ requires_approval: true, risk_gates: ["db-migration"] });
-    expect(afterNote.chunks[0].questions).toEqual([{ id: "q1", body: "Which parser owns this?" }]);
+    expect(afterNote.chunks[0].future_questions).toEqual([{ id: "q1", body: "Which parser owns this?" }]);
     expect(afterNote.chunks[0].run_attempts).toEqual([{ id: "attempt-1", status: "blocked" }]);
     expect(afterNote.chunks[0].status).toBe("doing");
     expect(afterNote.chunks[0].stage).toBe("review");

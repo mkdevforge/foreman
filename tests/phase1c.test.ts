@@ -101,8 +101,7 @@ function addFutureMetadata(repo: string): void {
     {
       id: "d-001",
       body: "Keep refresh handling in the API boundary.",
-      decided_at: "2026-05-06T00:00:00.000Z",
-      decided_by: "user@example.com"
+      decided_at: "2026-05-06T00:00:00.000Z"
     }
   ];
   task.chunks[0].run_attempts = [{ id: "attempt-1", status: "failed", cost_usd: 0.12 }];

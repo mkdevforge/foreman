@@ -15,6 +15,10 @@ import { CliError } from "../cli/errors";
 import { getForemanPaths, type ForemanPaths } from "./repo";
 import {
   SCHEMA_VERSION,
+  DISPATCH_APPROVAL_REQUIREMENTS,
+  DISPATCH_READINESS_STATUSES,
+  DISPATCH_RISK_LEVELS,
+  QUESTION_STATUSES,
   assertIsoUtcTimestamp,
   assertNonEmpty,
   assertValidChunkId,
@@ -23,7 +27,10 @@ import {
   assertValidTaskStatus,
   nowIso,
   type ChunkRef,
+  type ChunkDecision,
+  type ChunkDispatchReadiness,
   type ChunkNote,
+  type ChunkQuestion,
   type ForemanChunk,
   type ForemanTask,
   type TaskStatus
@@ -352,6 +359,20 @@ function validateChunk(value: unknown, source: string): ForemanChunk {
   const notes = expectArray(record.notes, "notes", source).map((note, index) =>
     validateNote(note, `${source}: notes[${index}]`)
   );
+  const questions =
+    record.questions === undefined
+      ? undefined
+      : expectArray(record.questions, "questions", source).map((question, index) =>
+          validateQuestion(question, `${source}: questions[${index}]`)
+        );
+  const decisions =
+    record.decisions === undefined
+      ? undefined
+      : expectArray(record.decisions, "decisions", source).map((decision, index) =>
+          validateDecision(decision, `${source}: decisions[${index}]`)
+        );
+  const dispatch =
+    record.dispatch === undefined ? undefined : validateDispatchReadiness(record.dispatch, `${source}: dispatch`);
 
   return {
     ...record,
@@ -362,7 +383,10 @@ function validateChunk(value: unknown, source: string): ForemanChunk {
     stage,
     created_at: createdAt,
     updated_at: updatedAt,
-    notes
+    notes,
+    ...(questions === undefined ? {} : { questions }),
+    ...(decisions === undefined ? {} : { decisions }),
+    ...(dispatch === undefined ? {} : { dispatch })
   };
 }
 
@@ -375,6 +399,107 @@ function validateNote(value: unknown, source: string): ChunkNote {
     ...record,
     ts,
     body: expectString(record.body, "body", source)
+  };
+}
+
+function validateQuestion(value: unknown, source: string): ChunkQuestion {
+  const record = expectRecord(value, "question", source);
+  const id = expectNonEmptyString(record.id, "id", source);
+  const status = expectString(record.status, "status", source);
+  if (!QUESTION_STATUSES.includes(status as ChunkQuestion["status"])) {
+    throw new CliError(
+      2,
+      "invalid_task_yaml",
+      `${source}: status must be one of ${QUESTION_STATUSES.join(", ")}`
+    );
+  }
+  const questionStatus = status as ChunkQuestion["status"];
+
+  const body = expectNonEmptyString(record.body, "body", source);
+  const askedAt = expectString(record.asked_at, "asked_at", source);
+  assertIsoUtcTimestamp(askedAt, "asked_at", source);
+  const answeredAt = expectNullableString(record.answered_at, "answered_at", source);
+  if (answeredAt !== null) {
+    assertIsoUtcTimestamp(answeredAt, "answered_at", source);
+  }
+  const answer = expectNullableString(record.answer, "answer", source);
+
+  if (questionStatus === "open" && (answeredAt !== null || answer !== null)) {
+    throw new CliError(2, "invalid_task_yaml", `${source}: open questions must not have an answer`);
+  }
+
+  if (questionStatus === "answered" && (answeredAt === null || answer === null || answer.trim().length === 0)) {
+    throw new CliError(2, "invalid_task_yaml", `${source}: answered questions must have answered_at and answer`);
+  }
+
+  return {
+    ...record,
+    id,
+    status: questionStatus,
+    body,
+    asked_at: askedAt,
+    answered_at: answeredAt,
+    answer
+  };
+}
+
+function validateDecision(value: unknown, source: string): ChunkDecision {
+  const record = expectRecord(value, "decision", source);
+  const id = expectNonEmptyString(record.id, "id", source);
+  const body = expectNonEmptyString(record.body, "body", source);
+  const decidedAt = expectString(record.decided_at, "decided_at", source);
+  assertIsoUtcTimestamp(decidedAt, "decided_at", source);
+
+  return {
+    ...record,
+    id,
+    body,
+    decided_at: decidedAt
+  };
+}
+
+function validateDispatchReadiness(value: unknown, source: string): ChunkDispatchReadiness {
+  const record = expectRecord(value, "dispatch", source);
+  const status = expectString(record.status, "status", source);
+  if (!DISPATCH_READINESS_STATUSES.includes(status as ChunkDispatchReadiness["status"])) {
+    throw new CliError(
+      2,
+      "invalid_task_yaml",
+      `${source}: status must be one of ${DISPATCH_READINESS_STATUSES.join(", ")}`
+    );
+  }
+  const readinessStatus = status as ChunkDispatchReadiness["status"];
+
+  const riskLevel = expectString(record.risk_level, "risk_level", source);
+  if (!DISPATCH_RISK_LEVELS.includes(riskLevel as ChunkDispatchReadiness["risk_level"])) {
+    throw new CliError(
+      2,
+      "invalid_task_yaml",
+      `${source}: risk_level must be one of ${DISPATCH_RISK_LEVELS.join(", ")}`
+    );
+  }
+  const dispatchRiskLevel = riskLevel as ChunkDispatchReadiness["risk_level"];
+
+  const approvalRequired = expectString(record.approval_required, "approval_required", source);
+  if (!DISPATCH_APPROVAL_REQUIREMENTS.includes(approvalRequired as ChunkDispatchReadiness["approval_required"])) {
+    throw new CliError(
+      2,
+      "invalid_task_yaml",
+      `${source}: approval_required must be one of ${DISPATCH_APPROVAL_REQUIREMENTS.join(", ")}`
+    );
+  }
+  const dispatchApprovalRequired = approvalRequired as ChunkDispatchReadiness["approval_required"];
+
+  const allowedActions = expectStringArray(record.allowed_actions, "allowed_actions", source);
+  const blockedActions = expectStringArray(record.blocked_actions, "blocked_actions", source);
+
+  return {
+    ...record,
+    status: readinessStatus,
+    risk_level: dispatchRiskLevel,
+    approval_required: dispatchApprovalRequired,
+    allowed_actions: allowedActions,
+    blocked_actions: blockedActions
   };
 }
 
@@ -402,6 +527,15 @@ function expectString(value: unknown, fieldName: string, source: string): string
   return value;
 }
 
+function expectNonEmptyString(value: unknown, fieldName: string, source: string): string {
+  const text = expectString(value, fieldName, source);
+  if (text.trim().length === 0) {
+    throw new CliError(2, "invalid_task_yaml", `${source}: ${fieldName} must not be empty`);
+  }
+
+  return text;
+}
+
 function expectNullableString(value: unknown, fieldName: string, source: string): string | null {
   if (value !== null && typeof value !== "string") {
     throw new CliError(2, "invalid_task_yaml", `${source}: ${fieldName} must be a string or null`);
@@ -416,6 +550,12 @@ function expectNumber(value: unknown, fieldName: string, source: string): number
   }
 
   return value;
+}
+
+function expectStringArray(value: unknown, fieldName: string, source: string): string[] {
+  return expectArray(value, fieldName, source).map((item, index) =>
+    expectNonEmptyString(item, `${fieldName}[${index}]`, source)
+  );
 }
 
 function errorMessage(error: unknown): string {
