@@ -25,6 +25,7 @@ export {
 export {
   createHarnessSummaryProvider,
   FOREMAN_SUMMARY_CHILD_ENV,
+  resolveHarnessCommand,
   truncateSummaryInput,
   type HarnessCommand,
   type HarnessRunResult,

@@ -1,4 +1,6 @@
 import { spawnSync } from "node:child_process";
+import { accessSync, constants } from "node:fs";
+import { delimiter, join } from "node:path";
 import type { ParsedSession } from "./types";
 
 export const DEFAULT_SUMMARY_MAX_TOKENS = 50_000;
@@ -66,6 +68,7 @@ export interface HarnessSummaryProviderOptions {
   claudeModel?: string;
   codexCommand?: string;
   codexModel?: string;
+  env?: Record<string, string | undefined>;
 }
 
 export function truncateSummaryInput(
@@ -156,9 +159,10 @@ export function createHarnessSummaryProvider(
 ): SummaryProvider {
   const runner = options.runner ?? defaultHarnessRunner;
   const timeoutMs = options.timeoutMs ?? 120_000;
-  const claudeCommand = options.claudeCommand ?? "claude";
+  const env = options.env ?? process.env;
+  const claudeCommand = options.claudeCommand ?? resolveHarnessCommand("claude", env);
   const claudeModel = options.claudeModel ?? "haiku";
-  const codexCommand = options.codexCommand ?? "codex";
+  const codexCommand = options.codexCommand ?? resolveHarnessCommand("codex", env);
   const codexModel = options.codexModel ?? "gpt-5.4-mini";
 
   return {
@@ -168,12 +172,14 @@ export function createHarnessSummaryProvider(
           ? buildClaudeHarnessCommand(request, {
               command: claudeCommand,
               model: claudeModel,
-              timeoutMs
+              timeoutMs,
+              env
             })
           : buildCodexHarnessCommand(request, {
               command: codexCommand,
               model: codexModel,
-              timeoutMs
+              timeoutMs,
+              env
             });
 
       const result = await runner(command);
@@ -221,7 +227,7 @@ function buildSummaryPrompt(parsed: ParsedSession, truncation: TruncatedSummaryI
 
 function buildClaudeHarnessCommand(
   request: SummaryRequest,
-  input: { command: string; model: string; timeoutMs: number }
+  input: { command: string; model: string; timeoutMs: number; env: Record<string, string | undefined> }
 ): HarnessCommand {
   return {
     command: input.command,
@@ -239,7 +245,7 @@ function buildClaudeHarnessCommand(
     ],
     stdin: request.prompt,
     cwd: request.project_path,
-    env: childEnvironment(),
+    env: childEnvironment(input.env),
     timeoutMs: input.timeoutMs,
     stdoutFormat: "plain-text"
   };
@@ -247,7 +253,7 @@ function buildClaudeHarnessCommand(
 
 function buildCodexHarnessCommand(
   request: SummaryRequest,
-  input: { command: string; model: string; timeoutMs: number }
+  input: { command: string; model: string; timeoutMs: number; env: Record<string, string | undefined> }
 ): HarnessCommand {
   return {
     command: input.command,
@@ -270,10 +276,29 @@ function buildCodexHarnessCommand(
     ],
     stdin: request.prompt,
     cwd: request.project_path,
-    env: childEnvironment(),
+    env: childEnvironment(input.env),
     timeoutMs: input.timeoutMs,
     stdoutFormat: "codex-json"
   };
+}
+
+export function resolveHarnessCommand(
+  binaryName: "claude" | "codex",
+  env: Record<string, string | undefined> = process.env
+): string {
+  const pathMatch = findExecutableOnPath(binaryName, env.PATH, env.HOME);
+  if (pathMatch !== null) {
+    return pathMatch;
+  }
+
+  for (const dir of fallbackUserBinDirs(env.HOME)) {
+    const candidate = join(dir, binaryName);
+    if (isExecutableFile(candidate)) {
+      return candidate;
+    }
+  }
+
+  return binaryName;
 }
 
 function extractHarnessSummary(command: HarnessCommand, stdout: string): string {
@@ -345,12 +370,71 @@ async function defaultHarnessRunner(command: HarnessCommand): Promise<HarnessRun
   };
 }
 
-function childEnvironment(): Record<string, string> {
-  return {
-    ...process.env,
-    [FOREMAN_SUMMARY_CHILD_ENV]: "1",
-    NO_COLOR: "1"
-  };
+function childEnvironment(env: Record<string, string | undefined>): Record<string, string> {
+  const child: Record<string, string> = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (value !== undefined) {
+      child[key] = value;
+    }
+  }
+
+  child[FOREMAN_SUMMARY_CHILD_ENV] = "1";
+  child.NO_COLOR = "1";
+  return child;
+}
+
+function findExecutableOnPath(binaryName: string, pathValue: string | undefined, homeDir: string | undefined): string | null {
+  if (pathValue === undefined || pathValue.length === 0) {
+    return null;
+  }
+
+  for (const rawEntry of pathValue.split(delimiter)) {
+    if (rawEntry.length === 0) {
+      continue;
+    }
+
+    const entry = expandHome(rawEntry, homeDir);
+    const candidate = join(entry, binaryName);
+    if (isExecutableFile(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+function fallbackUserBinDirs(homeDir: string | undefined): string[] {
+  if (homeDir === undefined || homeDir.length === 0) {
+    return [];
+  }
+
+  return [
+    join(homeDir, ".local", "bin"),
+    join(homeDir, ".bun", "bin"),
+    join(homeDir, ".npm-global", "bin"),
+    join(homeDir, "Library", "pnpm")
+  ];
+}
+
+function expandHome(pathEntry: string, homeDir: string | undefined): string {
+  if (pathEntry === "~") {
+    return homeDir ?? pathEntry;
+  }
+
+  if (pathEntry.startsWith("~/") && homeDir !== undefined && homeDir.length > 0) {
+    return join(homeDir, pathEntry.slice(2));
+  }
+
+  return pathEntry;
+}
+
+function isExecutableFile(path: string): boolean {
+  try {
+    accessSync(path, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function buildElisionMarker(elidedChars: number): string {

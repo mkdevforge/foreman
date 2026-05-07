@@ -26,6 +26,8 @@ bun run foreman-hook-stop-claude-code --help
 bun run foreman-hook-stop-codex --help
 ```
 
+The workflow examples below use `foreman` directly. From an unlinked checkout, run the same commands as `bun run foreman -- <args>`, for example `bun run foreman -- init`. To use the shorter `foreman ...` form from a checkout, run `bun link` once or put the repo root on PATH.
+
 ## Hook Install
 
 Install both supported Stop hooks:

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { Database } from "bun:sqlite";
-import { mkdtempSync, rmSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -205,6 +205,35 @@ describe("Phase 3c summary, truncation, and pricing", () => {
     expect(commands[1].stdoutFormat).toBe("codex-json");
     expect(commands[1].env[FOREMAN_SUMMARY_CHILD_ENV]).toBe("1");
     expect(commands[1].cwd).toBe("/tmp/project");
+  });
+
+  test("harness summary provider finds Claude in user bin dirs when PATH misses it", async () => {
+    const homeDir = mkdtempSync(join(tmpdir(), "foreman-harness-home-"));
+    tempDirs.push(homeDir);
+    const userBinDir = join(homeDir, ".local", "bin");
+    const claudeBin = join(userBinDir, "claude");
+    mkdirSync(userBinDir, { recursive: true });
+    writeFileSync(claudeBin, "#!/bin/sh\n");
+    chmodSync(claudeBin, 0o755);
+
+    const commands: HarnessCommand[] = [];
+    const provider = createHarnessSummaryProvider({
+      env: { HOME: homeDir, PATH: "" },
+      runner: async (command) => {
+        commands.push(command);
+        return {
+          exitCode: 0,
+          stdout: "Harness summary\n",
+          stderr: ""
+        };
+      }
+    });
+
+    await provider.summarize(summaryRequestFixture("claude-code"));
+
+    expect(commands[0].command).toBe(claudeBin);
+    expect(commands[0].env.HOME).toBe(homeDir);
+    expect(commands[0].env[FOREMAN_SUMMARY_CHILD_ENV]).toBe("1");
   });
 
   test("harness summary provider extracts Codex agent messages from JSONL stdout", async () => {
