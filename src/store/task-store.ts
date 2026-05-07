@@ -23,6 +23,7 @@ import {
   assertNonEmpty,
   assertValidChunkId,
   assertValidChunkStage,
+  assertValidDecisionId,
   assertValidQuestionId,
   assertValidTaskId,
   assertValidTaskStatus,
@@ -67,6 +68,15 @@ export interface AnswerChunkQuestionInput extends ChunkRef {
 export interface ChunkQuestionMutationResult {
   chunk: ForemanChunk;
   question: ChunkQuestion;
+}
+
+export interface AddChunkDecisionInput extends ChunkRef {
+  body: string;
+}
+
+export interface ChunkDecisionMutationResult {
+  chunk: ForemanChunk;
+  decision: ChunkDecision;
 }
 
 const README_BODY = `# Foreman
@@ -314,6 +324,39 @@ export function answerChunkQuestion(repoRoot: string, input: AnswerChunkQuestion
   return { chunk, question };
 }
 
+export function listChunkDecisions(repoRoot: string, ref: ChunkRef): ChunkDecision[] {
+  const task = readTask(repoRoot, ref.taskId);
+  const chunk = findChunkOrThrow(task, ref);
+
+  return chunk.decisions ?? [];
+}
+
+export function addChunkDecision(repoRoot: string, input: AddChunkDecisionInput): ChunkDecisionMutationResult {
+  assertNonEmpty(input.body, "decision body");
+
+  let decision: ChunkDecision | undefined;
+  const chunk = mutateChunk(repoRoot, input, (task, targetChunk) => {
+    const now = nowIso();
+    const decisions = targetChunk.decisions ?? [];
+
+    decision = {
+      id: nextDecisionId(decisions),
+      body: input.body,
+      decided_at: now
+    };
+
+    targetChunk.decisions = [...decisions, decision];
+    targetChunk.updated_at = now;
+    task.updated_at = now;
+  });
+
+  if (decision === undefined) {
+    throw new CliError(1, "internal_error", "failed to add decision");
+  }
+
+  return { chunk, decision };
+}
+
 function mutateChunk(
   repoRoot: string,
   ref: ChunkRef,
@@ -471,6 +514,9 @@ function validateChunk(value: unknown, source: string): ForemanChunk {
       : expectArray(record.decisions, "decisions", source).map((decision, index) =>
           validateDecision(decision, `${source}: decisions[${index}]`)
         );
+  if (decisions !== undefined) {
+    assertUniqueIds(decisions, "decisions", source);
+  }
   const dispatch =
     record.dispatch === undefined ? undefined : validateDispatchReadiness(record.dispatch, `${source}: dispatch`);
 
@@ -583,6 +629,7 @@ function nextQuestionId(questions: ChunkQuestion[]): string {
 function validateDecision(value: unknown, source: string): ChunkDecision {
   const record = expectRecord(value, "decision", source);
   const id = expectNonEmptyString(record.id, "id", source);
+  assertValidDecisionId(id);
   const body = expectNonEmptyString(record.body, "body", source);
   const decidedAt = expectString(record.decided_at, "decided_at", source);
   assertIsoUtcTimestamp(decidedAt, "decided_at", source);
@@ -593,6 +640,30 @@ function validateDecision(value: unknown, source: string): ChunkDecision {
     body,
     decided_at: decidedAt
   };
+}
+
+function nextDecisionId(decisions: ChunkDecision[]): string {
+  let maxId = 0;
+
+  for (const decision of decisions) {
+    const match = /^d([1-9]\d*)$/.exec(decision.id);
+    if (match === null) {
+      continue;
+    }
+
+    const value = Number(match[1]);
+    if (Number.isSafeInteger(value)) {
+      maxId = Math.max(maxId, value);
+    }
+  }
+
+  const existingIds = new Set(decisions.map((decision) => decision.id));
+  let nextId = maxId + 1;
+  while (existingIds.has(`d${nextId}`)) {
+    nextId += 1;
+  }
+
+  return `d${nextId}`;
 }
 
 function validateDispatchReadiness(value: unknown, source: string): ChunkDispatchReadiness {

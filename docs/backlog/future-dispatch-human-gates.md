@@ -69,7 +69,7 @@ chunks:
         answered_at: null
         answer: null
     decisions:
-      - id: d-001
+      - id: d1
         body: Keep refresh handling in the API boundary.
         decided_at: 2026-05-06T00:00:00.000Z
     dispatch:

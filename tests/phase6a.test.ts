@@ -33,6 +33,26 @@ describe("Phase 6a automated acceptance hardening", () => {
       "chunk",
       "note"
     ]);
+    expectJsonCommand(repo, homeDir, ["question", "add", "FOREMAN-1/api", "Which boundary owns this?"], [
+      "task_id",
+      "chunk_id",
+      "question",
+      "chunk"
+    ]);
+    expectJsonCommand(repo, homeDir, ["question", "list", "FOREMAN-1/api"], ["task_id", "chunk_id", "questions"]);
+    expectJsonCommand(repo, homeDir, ["question", "answer", "FOREMAN-1/api", "q1", "The API boundary."], [
+      "task_id",
+      "chunk_id",
+      "question",
+      "chunk"
+    ]);
+    expectJsonCommand(repo, homeDir, ["decision", "add", "FOREMAN-1/api", "Use the API boundary."], [
+      "task_id",
+      "chunk_id",
+      "decision",
+      "chunk"
+    ]);
+    expectJsonCommand(repo, homeDir, ["decision", "list", "FOREMAN-1/api"], ["task_id", "chunk_id", "decisions"]);
     expectJsonCommand(repo, homeDir, ["task", "list"], ["tasks"]);
     expectJsonCommand(repo, homeDir, ["task", "show", "FOREMAN-1"], ["task"]);
     expectJsonCommand(repo, homeDir, ["chunk", "list", "FOREMAN-1"], ["task_id", "chunks"]);

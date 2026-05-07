@@ -93,6 +93,17 @@ foreman question answer FOREMAN-1/parser q1 "Keep refresh handling in the API bo
 
 Question commands support `--json` and expose stable `task_id`, `chunk_id`, `question`, and `questions` fields for UI clients.
 
+## Decision Workflow
+
+Decisions capture accepted human choices as durable chunk context. IDs are generated per chunk as `d1`, `d2`, and so on.
+
+```sh
+foreman decision add FOREMAN-1/parser "Keep refresh handling in the API boundary."
+foreman decision list FOREMAN-1/parser
+```
+
+Decision commands support `--json` and expose stable `task_id`, `chunk_id`, `decision`, and `decisions` fields for UI clients. Decisions do not store author identity in repo YAML.
+
 ## Active Work Context
 
 Tell Foreman what task/chunk the next agent session should link to:

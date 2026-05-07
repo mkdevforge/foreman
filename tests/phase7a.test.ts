@@ -101,7 +101,7 @@ function addDispatchReadinessMetadata(repo: string): void {
   ];
   chunk.decisions = [
     {
-      id: "d-001",
+      id: "d1",
       body: "Keep committed metadata separate from local execution state.",
       decided_at: "2026-05-07T18:03:00.000Z"
     }
@@ -153,7 +153,7 @@ describe("Phase 7a dispatch readiness YAML schema", () => {
     ]);
     expect(task.chunks[0].decisions).toEqual([
       {
-        id: "d-001",
+        id: "d1",
         body: "Keep committed metadata separate from local execution state.",
         decided_at: "2026-05-07T18:03:00.000Z"
       }
@@ -211,7 +211,7 @@ describe("Phase 7a dispatch readiness YAML schema", () => {
 
     task.chunks[0].decisions = [
       {
-        id: "d-001",
+        id: "d1",
         body: "Use SQLite for local state.",
         decided_at: "not-a-date"
       }

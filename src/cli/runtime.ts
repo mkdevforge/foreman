@@ -34,11 +34,13 @@ import {
 } from "../store/active";
 import {
   addChunk,
+  addChunkDecision,
   addChunkQuestion,
   addTask,
   answerChunkQuestion,
   appendChunkNote,
   initializeForemanRepo,
+  listChunkDecisions,
   listChunkQuestions,
   listChunks,
   listTasks,
@@ -50,6 +52,7 @@ import {
 import {
   assertValidChunkStage,
   parseChunkRef,
+  type ChunkDecision,
   type ChunkNote,
   type ChunkQuestion,
   type ChunkStage,
@@ -256,6 +259,7 @@ function createProgram(json: boolean, io: CliIo): Command {
   program.addCommand(createReviewCommand(json, io));
   program.addCommand(createCatalogCommand(json, io));
   program.addCommand(createQuestionCommand(json, io));
+  program.addCommand(createDecisionCommand(json, io));
   program.addCommand(createTaskCommand(json, io));
   program.addCommand(createChunkCommand(json, io));
   program.addCommand(createSessionCommand(json, io));
@@ -477,6 +481,51 @@ function createQuestionCommand(json: boolean, io: CliIo): Command {
     });
 
   return question;
+}
+
+function createDecisionCommand(json: boolean, io: CliIo): Command {
+  const decision = configureCommand(new Command("decision"), io)
+    .description("Manage chunk decisions.")
+    .action(() => {
+      throw new CliError(2, "missing_command", "missing decision command");
+    });
+
+  configureCommand(decision.command("add"), io)
+    .description("Add an accepted decision to a chunk.")
+    .argument("<task>/<chunk>")
+    .argument("<body>")
+    .action((ref: string, body: string) => {
+      const repoRoot = findRepoRoot();
+      const chunkRef = parseChunkRef(ref);
+      const result = addChunkDecision(repoRoot, {
+        ...chunkRef,
+        body
+      });
+
+      writeData(json, io, `Added decision ${result.decision.id} to ${ref}\n`, {
+        task_id: chunkRef.taskId,
+        chunk_id: chunkRef.chunkId,
+        decision: toJsonDecision(result.decision),
+        chunk: toJsonChunk(result.chunk)
+      });
+    });
+
+  configureCommand(decision.command("list"), io)
+    .description("List decisions for a chunk.")
+    .argument("<task>/<chunk>")
+    .action((ref: string) => {
+      const repoRoot = findRepoRoot();
+      const chunkRef = parseChunkRef(ref);
+      const decisions = listChunkDecisions(repoRoot, chunkRef);
+
+      writeData(json, io, renderDecisionList(decisions), {
+        task_id: chunkRef.taskId,
+        chunk_id: chunkRef.chunkId,
+        decisions: decisions.map(toJsonDecision)
+      });
+    });
+
+  return decision;
 }
 
 function createReviewCommand(json: boolean, io: CliIo): Command {
@@ -1436,6 +1485,14 @@ function toJsonQuestion(question: ChunkQuestion) {
   };
 }
 
+function toJsonDecision(decision: ChunkDecision) {
+  return {
+    id: decision.id,
+    body: decision.body,
+    decided_at: decision.decided_at
+  };
+}
+
 function toJsonSessionOverview(session: SessionOverview) {
   return {
     id: session.id,
@@ -1575,6 +1632,14 @@ function renderQuestionList(questions: ChunkQuestion[]): string {
   }
 
   return `${questions.map(formatQuestionSummary).join("\n")}\n`;
+}
+
+function renderDecisionList(decisions: ChunkDecision[]): string {
+  if (decisions.length === 0) {
+    return "No decisions found.\n";
+  }
+
+  return `${decisions.map(formatDecisionSummary).join("\n")}\n`;
 }
 
 function renderSessionList(sessions: SessionOverview[]): string {
@@ -1746,6 +1811,10 @@ function formatQuestionSummary(question: ChunkQuestion): string {
   }
 
   return `${question.id}  open  ${question.body}`;
+}
+
+function formatDecisionSummary(decision: ChunkDecision): string {
+  return `${decision.id}  ${decision.decided_at}  ${decision.body}`;
 }
 
 function formatSessionListRow(session: SessionOverview): string {
