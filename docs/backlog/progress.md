@@ -34,10 +34,10 @@ This tracker is the single status file for the v0 backlog. Update it whenever a 
 | 5b | [Catalog listing and one-shot linking](phase-5b-catalog-one-shot.md) | Done | Reviewed | Unattached sessions can be listed, linked, and unlinked non-interactively. |
 | 5c | [Interactive catalog](phase-5c-interactive-catalog.md) | Done | Reviewed | Catalog prompt loop supports link, skip, and quit paths. |
 | 5d | [Session cost CLI](phase-5d-session-cost.md) | Done | Reviewed | Session cost reports group estimates by source, project, task, chunk, model, and day. |
-| 6a | [Automated acceptance gaps](phase-6a-automated-acceptance-gaps.md) | Not started | Reviewed | Missing acceptance tests, JSON contract, exit codes, idempotency, and output-shape gaps are closed. |
-| 6b | [User documentation](phase-6b-user-documentation.md) | Not started | Reviewed | Setup, hook install, core workflows, JSON contract, and v0 limitations are documented. |
-| 6c | [Real tool verification](phase-6c-real-tool-verification.md) | Not started | Reviewed | Claude Code and Codex manual Stop hook flows are verified and recorded. |
-| 6d | [Final release pass](phase-6d-final-release-pass.md) | Not started | Reviewed | Clean-checkout install, build, test, bin smoke, and final acceptance state are verified. |
+| 6a | [Automated acceptance gaps](phase-6a-automated-acceptance-gaps.md) | Done | Reviewed | Missing acceptance tests, JSON contract, exit codes, idempotency, and output-shape gaps are closed. |
+| 6b | [User documentation](phase-6b-user-documentation.md) | Done | Reviewed | Setup, hook install, core workflows, JSON contract, and v0 limitations are documented. |
+| 6c | [Real tool verification](phase-6c-real-tool-verification.md) | Done | Reviewed | Claude Code and Codex manual Stop hook flows are verified and recorded. |
+| 6d | [Final release pass](phase-6d-final-release-pass.md) | Done | Reviewed | Clean-checkout install, build, test, bin smoke, and final acceptance state are verified. |
 
 ## Post-v0 Backlog Seeds
 
@@ -72,7 +72,7 @@ Track implementation-blocking decisions here. Close each decision before impleme
 
 | PRD AC | Covered By | Status |
 | --- | --- | --- |
-| 1. `bun install && bun run build` produces working hook + CLI scripts. | Phases 0, 6d | Not started |
+| 1. `bun install && bun run build` produces working hook + CLI scripts. | Phases 0, 6d | Done |
 | 2. `foreman install` registers Claude Code and Codex Stop hooks idempotently. | Phases 4, 6a | Done |
 | 3. `foreman init` creates `.foreman/` in the current repo. | Phase 1a | Done |
 | 4. `task add` and `chunk add` create well-formed YAML that round-trips. | Phase 1a | Done |
@@ -82,10 +82,10 @@ Track implementation-blocking decisions here. Close each decision before impleme
 | 7. `foreman review <task>/<chunk>` shows chunk metadata plus linked sessions. | Phase 5a | Done |
 | 8. `foreman catalog` lists unattached sessions and supports interactive linking. | Phases 5b, 5c | Done |
 | 9. `foreman session cost --by source` reports a correct source breakdown. | Phase 5d | Done |
-| 10. All commands have valid `--json` mode. | Phases 0, 1a, 1b, 2b, 5a-5d, 6a, 6b | In progress |
+| 10. All commands have valid `--json` mode. | Phases 0, 1a, 1b, 2b, 5a-5d, 6a, 6b | Done |
 | 11. Re-running hooks does not duplicate stored rows or links. | Phases 3b, 4 | Done |
 | 12. Hooks log failures and exit 0. | Phase 4 | Done |
-| 13. Basic test suite covers parsers, migrations, dedup, soft linkage, catalog flow, and output shape. | Phases 1a, 1b, 2a, 2b, 3a-5d, 6a, 6d | In progress |
+| 13. Basic test suite covers parsers, migrations, dedup, soft linkage, catalog flow, and output shape. | Phases 1a, 1b, 2a, 2b, 3a-5d, 6a, 6d | Done |
 
 ## Maintenance Rules
 
