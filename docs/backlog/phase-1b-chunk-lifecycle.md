@@ -2,17 +2,16 @@
 
 ## Goal
 
-Complete the repo-scoped chunk lifecycle on top of the Phase 1a YAML store. By the end of this phase, chunks can move through status and stage changes, and review notes can be appended with authorship metadata.
+Complete the repo-scoped chunk lifecycle on top of the Phase 1a YAML store. By the end of this phase, chunks can move through status and stage changes, and review notes can be appended without storing local identity in repo YAML.
 
 ## Scope
 
 - Implement chunk mutation commands:
   - `foreman chunk status <task>/<chunk> <todo|doing|review|done|blocked>`
   - `foreman chunk stage <task>/<chunk> <discovery|plan|implement|review>`
-  - `foreman chunk note <task>/<chunk> "..." [--author <label>]`
+  - `foreman chunk note <task>/<chunk> "..."`
 - Validate full task YAML schema from the PRD, including notes:
   - note timestamp
-  - note author
   - note body
 - Preserve unknown task-level and chunk-level YAML fields during every chunk mutation.
 - Preserve task and chunk timestamp semantics:
@@ -32,15 +31,15 @@ Complete the repo-scoped chunk lifecycle on top of the Phase 1a YAML store. By t
 
 ## Resolved Decisions
 
-- Note author fallback: `foreman chunk note` uses a non-identifying `local` label by default and allows `--author <label>` when the caller wants a different repo-visible author label.
+- Note authorship policy: repo YAML notes do not store author metadata. Git history provides repo-visible authorship for committed note changes; local identity belongs in SQLite session origin data.
 
 ## Implementation Notes
 
 - `foreman chunk status` mutates only chunk status and timestamps.
 - `foreman chunk stage` mutates only chunk stage and timestamps.
 - `foreman chunk note` appends a note and does not edit or reorder existing notes.
-- Author comes from `--author <label>` when provided; otherwise use `local`.
-- Blank explicit authors fail with a clear CLI error.
+- New notes include only `ts` and `body`.
+- Legacy note `author` fields are preserved on YAML rewrites as unknown fields, but omitted from v0 JSON output.
 - Notes use ISO 8601 UTC timestamps.
 - Note body is a plain string argument in this phase. No editor, stdin, or file support.
 - Preserve the same atomic write behavior and YAML formatting stance from Phase 1a.
@@ -52,13 +51,12 @@ The phase is complete when automated tests cover:
 
 - Updating chunk status.
 - Updating chunk stage independently from status.
-- Appending a note with timestamp, default `local` author, and body.
-- Appending a note with an explicit `--author` override.
+- Appending a note with timestamp and body.
 - Preserving existing notes when appending another note.
 - Preserving unknown task-level and chunk-level fields when changing chunk status, changing chunk stage, and appending notes.
 - Updating task and chunk `updated_at` correctly.
 - Failing clearly when the chunk reference does not exist.
-- Failing clearly when an explicit note author is blank.
+- Failing clearly when unsupported note options are provided.
 - Text output for each mutation command.
 - JSON output shape for each mutation command.
 - Semantic YAML round-trip after repeated chunk mutations.

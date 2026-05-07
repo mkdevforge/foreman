@@ -76,10 +76,10 @@ foreman task status FOREMAN-1 doing
 foreman chunk list FOREMAN-1
 foreman chunk status FOREMAN-1/parser doing
 foreman chunk stage FOREMAN-1/parser implement
-foreman chunk note FOREMAN-1/parser "Ready for review." --author reviewer
+foreman chunk note FOREMAN-1/parser "Ready for review."
 ```
 
-Task YAML is intended to be committed with the repo. v0 validates known fields but preserves unknown task-level and chunk-level fields so future dispatch metadata can round-trip. Notes use `author: local` by default; use `--author <label>` only when you want an explicit repo-visible label.
+Task YAML is intended to be committed with the repo. v0 validates known fields but preserves unknown task-level and chunk-level fields so future dispatch metadata can round-trip. Notes do not store author metadata; use Git history for repo-visible authorship and local session data for local identity.
 
 ## Active Work Context
 

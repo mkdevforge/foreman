@@ -149,8 +149,6 @@ interface SessionCostGroup {
   totalCostUsd: number;
 }
 
-const DEFAULT_NOTE_AUTHOR = "local";
-
 export function runForemanCli(argv: string[], io: CliIo): CliResult {
   const globals = extractGlobalFlags(argv);
   const program = createProgram(globals.json, io);
@@ -390,13 +388,11 @@ function createChunkCommand(json: boolean, io: CliIo): Command {
     .description("Append a review note to a chunk.")
     .argument("<task>/<chunk>")
     .argument("<body>")
-    .option("--author <label>", `override note author label; defaults to '${DEFAULT_NOTE_AUTHOR}'`)
-    .action((ref: string, body: string, options: { author?: string }) => {
+    .action((ref: string, body: string) => {
       const repoRoot = findRepoRoot();
       const chunkRef = parseChunkRef(ref);
       const updatedChunk = appendChunkNote(repoRoot, {
         ...chunkRef,
-        author: resolveNoteAuthor(options.author),
         body
       });
       const note = updatedChunk.notes.at(-1);
@@ -1353,7 +1349,6 @@ function toJsonChunk(chunk: ForemanChunk) {
 function toJsonNote(note: ChunkNote) {
   return {
     ts: note.ts,
-    author: note.author,
     body: note.body
   };
 }
@@ -1438,20 +1433,6 @@ function toJsonSessionToolCall(toolCall: SessionToolCall) {
     is_error: toolCall.is_error,
     params_hash: toolCall.params_hash
   };
-}
-
-function resolveNoteAuthor(explicitAuthor: string | undefined): string {
-  if (explicitAuthor !== undefined) {
-    const author = explicitAuthor.trim();
-
-    if (author.length === 0) {
-      throw new CliError(2, "invalid_input", "author must not be empty");
-    }
-
-    return author;
-  }
-
-  return DEFAULT_NOTE_AUTHOR;
 }
 
 function normalizeSessionProjectFilter(projectPath: string | undefined): string | undefined {
@@ -1771,7 +1752,7 @@ function renderChunkNotes(notes: ChunkNote[]): string[] {
   }
 
   return notes.flatMap((note) => [
-    `  ${note.ts}  ${note.author}`,
+    `  ${note.ts}`,
     ...renderIndentedBlock(note.body).map((line) => `  ${line}`)
   ]);
 }

@@ -29,7 +29,7 @@ Implement the first usable repo-scoped orchestration slice: initialize `.foreman
 - `foreman chunk status`.
 - `foreman chunk stage`.
 - `foreman chunk note`.
-- Git author lookup.
+- Review note author metadata.
 - `foreman work`, `foreman stop`, and `foreman status` active-context commands.
 - SQLite.
 - Session, review, catalog, and hook behavior.

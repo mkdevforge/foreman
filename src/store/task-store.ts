@@ -44,7 +44,6 @@ export interface AddChunkInput {
 }
 
 export interface AppendChunkNoteInput extends ChunkRef {
-  author: string;
   body: string;
 }
 
@@ -203,7 +202,6 @@ export function updateChunkStage(repoRoot: string, ref: ChunkRef, stage: string)
 }
 
 export function appendChunkNote(repoRoot: string, input: AppendChunkNoteInput): ForemanChunk {
-  assertNonEmpty(input.author, "author");
   assertNonEmpty(input.body, "note body");
 
   return mutateChunk(repoRoot, input, (task, chunk) => {
@@ -211,7 +209,6 @@ export function appendChunkNote(repoRoot: string, input: AppendChunkNoteInput): 
 
     chunk.notes.push({
       ts: now,
-      author: input.author,
       body: input.body
     });
     chunk.updated_at = now;
@@ -377,7 +374,6 @@ function validateNote(value: unknown, source: string): ChunkNote {
   return {
     ...record,
     ts,
-    author: expectString(record.author, "author", source),
     body: expectString(record.body, "body", source)
   };
 }

@@ -43,7 +43,7 @@ This is a compatibility guardrail for post-v0 dispatch and human-gate metadata. 
 - Mutations should load the full task document, update only the owned field paths, validate the known-field invariants, and rewrite atomically.
 - Unknown fields inside future objects can be treated opaquely.
 - Unknown top-level file fields outside the task object should also be preserved if the parser naturally supports it, but task-level and chunk-level preservation is the required v0 contract.
-- Implemented readers/writers validate known task, chunk, and note fields, then carry unknown object keys forward before atomic rewrite.
+- Implemented readers/writers validate known task, chunk, and note fields, then carry unknown object keys forward before atomic rewrite. Legacy note `author` keys are preserved as unknown YAML fields but are not part of the v0 note schema.
 - v0 JSON output intentionally serializes only documented v0 task, chunk, and note fields. Future dispatch metadata remains in YAML storage but is not part of the v0 output contract.
 - New task and chunk creation still writes only v0-owned fields; future metadata appears only when manually added or when a future command owns it.
 

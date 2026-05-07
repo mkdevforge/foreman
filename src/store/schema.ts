@@ -10,7 +10,6 @@ export type ChunkStage = (typeof CHUNK_STAGES)[number];
 
 export interface ChunkNote {
   ts: string;
-  author: string;
   body: string;
   [key: string]: unknown;
 }

@@ -58,7 +58,7 @@ Task                       (in repo: .foreman/tasks/<id>.yaml)
       ├── status           (todo|doing|review|done|blocked)
       ├── stage            (discovery|plan|implement|review)
       ├── notes: [         (review notes, append-only in practice)
-      │     { ts, author, body }
+      │     { ts, body }
       │   ]
       └── created_at, updated_at
     ]
@@ -231,7 +231,7 @@ Two consumers matter: AI agents (default text) and a future Avalonia client (`--
 - `foreman chunk list <task> [--json]`
 - `foreman chunk status <task>/<chunk> <todo|doing|review|done|blocked>`
 - `foreman chunk stage <task>/<chunk> <discovery|plan|implement|review>` — set the stage independently of status
-- `foreman chunk note <task>/<chunk> "..."` — append a review note (timestamped, default author label = `local`; `--author <label>` can override)
+- `foreman chunk note <task>/<chunk> "..."` — append a timestamped review note. Repo notes do not store author metadata; Git history provides repo-visible authorship, and local session identity stays in SQLite.
 
 #### Work context (soft linkage)
 - `foreman work <task>/<chunk> [--stage ...]` — write `~/.foreman/active.json`. Optional `--stage` overrides the chunk's current stage for this session only.
@@ -410,7 +410,6 @@ chunks:
     updated_at: 2026-05-05T14:32:00Z
     notes:
       - ts: 2026-05-05T13:15:00Z
-        author: local
         body: |
           Initial implement looks good but missing the JWT signature
           validation step. Sending back to implement.

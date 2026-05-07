@@ -128,7 +128,7 @@ describe("foreman chunk lifecycle", () => {
     expect(task.updated_at).toBe(chunk.updated_at);
   });
 
-  test("appends a note with the default non-identifying author label", () => {
+  test("appends a note without repo-visible author metadata", () => {
     const repo = setupRepo();
 
     forceOldTimestamps(repo);
@@ -140,37 +140,52 @@ describe("foreman chunk lifecycle", () => {
     expect(result.stdout).toBe("Added note to chunk FOREMAN-1/yaml-store\n");
     expect(chunk.notes).toHaveLength(1);
     expect(chunk.notes[0]).toMatchObject({
-      author: "local",
       body: "Ready for review."
     });
+    expect(chunk.notes[0].author).toBeUndefined();
     expect(chunk.notes[0].ts).toMatch(isoUtcPattern);
     expect(task.updated_at).toBe(chunk.updated_at);
     expect(chunk.updated_at).toBe(chunk.notes[0].ts);
   });
 
-  test("appends notes with explicit author override and preserves existing notes", () => {
+  test("appends notes and preserves existing notes", () => {
     const repo = setupRepo();
 
-    expect(
-      runForeman(repo, ["chunk", "note", "FOREMAN-1/yaml-store", "First note.", "--author", "reviewer"])
-        .exitCode
-    ).toBe(0);
-    const result = runForeman(repo, [
-      "chunk",
-      "note",
-      "FOREMAN-1/yaml-store",
-      "Second note.",
-      "--author",
-      "lead"
-    ]);
+    expect(runForeman(repo, ["chunk", "note", "FOREMAN-1/yaml-store", "First note."]).exitCode).toBe(0);
+    const result = runForeman(repo, ["chunk", "note", "FOREMAN-1/yaml-store", "Second note."]);
     const task = readTaskYaml(repo);
 
     expect(result.exitCode).toBe(0);
     expect(task.chunks[0].notes).toHaveLength(2);
-    expect(task.chunks[0].notes[0].author).toBe("reviewer");
+    expect(task.chunks[0].notes[0].author).toBeUndefined();
     expect(task.chunks[0].notes[0].body).toBe("First note.");
-    expect(task.chunks[0].notes[1].author).toBe("lead");
+    expect(task.chunks[0].notes[1].author).toBeUndefined();
     expect(task.chunks[0].notes[1].body).toBe("Second note.");
+  });
+
+  test("preserves legacy note author fields without exposing them in JSON", () => {
+    const repo = setupRepo();
+    const task = readTaskYaml(repo);
+
+    task.chunks[0].notes = [
+      {
+        ts: "2026-01-02T00:00:00.000Z",
+        author: "legacy",
+        body: "Legacy note."
+      }
+    ];
+    writeTaskYaml(repo, task);
+
+    expect(runForeman(repo, ["chunk", "note", "FOREMAN-1/yaml-store", "New note."]).exitCode).toBe(0);
+    const afterNote = readTaskYaml(repo);
+    const shown = JSON.parse(runForeman(repo, ["task", "show", "FOREMAN-1", "--json"]).stdout);
+
+    expect(afterNote.chunks[0].notes[0].author).toBe("legacy");
+    expect(afterNote.chunks[0].notes[1].author).toBeUndefined();
+    expect(shown.task.chunks[0].notes[0]).toEqual({
+      ts: "2026-01-02T00:00:00.000Z",
+      body: "Legacy note."
+    });
   });
 
   test("preserves unknown task and chunk fields across repeated chunk mutations", () => {
@@ -211,14 +226,14 @@ describe("foreman chunk lifecycle", () => {
     expect(result.stderr).toContain("chunk 'FOREMAN-1/missing' was not found");
   });
 
-  test("rejects blank explicit note authors", () => {
+  test("rejects unknown note options", () => {
     const repo = setupRepo();
 
-    const result = runForeman(repo, ["chunk", "note", "FOREMAN-1/yaml-store", "No author.", "--author", "   "]);
+    const result = runForeman(repo, ["chunk", "note", "FOREMAN-1/yaml-store", "No author.", "--author", "reviewer"]);
 
     expect(result.exitCode).toBe(2);
     expect(result.stdout).toBe("");
-    expect(result.stderr).toContain("author must not be empty");
+    expect(result.stderr).toContain("unknown option '--author'");
   });
 
   test("emits JSON envelopes for chunk mutations", () => {
@@ -236,8 +251,6 @@ describe("foreman chunk lifecycle", () => {
         "note",
         "FOREMAN-1/yaml-store",
         "JSON note.",
-        "--author",
-        "reviewer",
         "--json"
       ]).stdout
     );
@@ -250,7 +263,7 @@ describe("foreman chunk lifecycle", () => {
     expect(note.schema_version).toBe(1);
     expect(note.chunk.notes).toHaveLength(1);
     expect(note.note.body).toBe("JSON note.");
-    expect(note.note.author).toBe("reviewer");
+    expect(note.note.author).toBeUndefined();
     expect(note.note.ts).toMatch(isoUtcPattern);
   });
 });
