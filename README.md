@@ -81,6 +81,18 @@ foreman chunk note FOREMAN-1/parser "Ready for review."
 
 Task YAML is intended to be committed with the repo. v0 validates known fields but preserves unknown task-level and chunk-level fields so future dispatch metadata can round-trip. Notes do not store author metadata; use Git history for repo-visible authorship and local session data for local identity.
 
+## Question Workflow
+
+Questions capture missing context as explicit chunk state. IDs are generated per chunk as `q1`, `q2`, and so on.
+
+```sh
+foreman question add FOREMAN-1/parser "Which auth boundary owns token refresh?"
+foreman question list FOREMAN-1/parser
+foreman question answer FOREMAN-1/parser q1 "Keep refresh handling in the API boundary."
+```
+
+Question commands support `--json` and expose stable `task_id`, `chunk_id`, `question`, and `questions` fields for UI clients.
+
 ## Active Work Context
 
 Tell Foreman what task/chunk the next agent session should link to:

@@ -34,9 +34,12 @@ import {
 } from "../store/active";
 import {
   addChunk,
+  addChunkQuestion,
   addTask,
+  answerChunkQuestion,
   appendChunkNote,
   initializeForemanRepo,
+  listChunkQuestions,
   listChunks,
   listTasks,
   readTask,
@@ -48,6 +51,7 @@ import {
   assertValidChunkStage,
   parseChunkRef,
   type ChunkNote,
+  type ChunkQuestion,
   type ChunkStage,
   type ForemanChunk,
   type ForemanTask
@@ -251,6 +255,7 @@ function createProgram(json: boolean, io: CliIo): Command {
 
   program.addCommand(createReviewCommand(json, io));
   program.addCommand(createCatalogCommand(json, io));
+  program.addCommand(createQuestionCommand(json, io));
   program.addCommand(createTaskCommand(json, io));
   program.addCommand(createChunkCommand(json, io));
   program.addCommand(createSessionCommand(json, io));
@@ -405,6 +410,73 @@ function createChunkCommand(json: boolean, io: CliIo): Command {
     });
 
   return chunk;
+}
+
+function createQuestionCommand(json: boolean, io: CliIo): Command {
+  const question = configureCommand(new Command("question"), io)
+    .description("Manage chunk questions.")
+    .action(() => {
+      throw new CliError(2, "missing_command", "missing question command");
+    });
+
+  configureCommand(question.command("add"), io)
+    .description("Add an open question to a chunk.")
+    .argument("<task>/<chunk>")
+    .argument("<body>")
+    .action((ref: string, body: string) => {
+      const repoRoot = findRepoRoot();
+      const chunkRef = parseChunkRef(ref);
+      const result = addChunkQuestion(repoRoot, {
+        ...chunkRef,
+        body
+      });
+
+      writeData(json, io, `Added question ${result.question.id} to ${ref}\n`, {
+        task_id: chunkRef.taskId,
+        chunk_id: chunkRef.chunkId,
+        question: toJsonQuestion(result.question),
+        chunk: toJsonChunk(result.chunk)
+      });
+    });
+
+  configureCommand(question.command("list"), io)
+    .description("List questions for a chunk.")
+    .argument("<task>/<chunk>")
+    .action((ref: string) => {
+      const repoRoot = findRepoRoot();
+      const chunkRef = parseChunkRef(ref);
+      const questions = listChunkQuestions(repoRoot, chunkRef);
+
+      writeData(json, io, renderQuestionList(questions), {
+        task_id: chunkRef.taskId,
+        chunk_id: chunkRef.chunkId,
+        questions: questions.map(toJsonQuestion)
+      });
+    });
+
+  configureCommand(question.command("answer"), io)
+    .description("Answer an open chunk question.")
+    .argument("<task>/<chunk>")
+    .argument("<question-id>")
+    .argument("<answer>")
+    .action((ref: string, questionId: string, answer: string) => {
+      const repoRoot = findRepoRoot();
+      const chunkRef = parseChunkRef(ref);
+      const result = answerChunkQuestion(repoRoot, {
+        ...chunkRef,
+        questionId,
+        answer
+      });
+
+      writeData(json, io, `Answered question ${result.question.id} for ${ref}\n`, {
+        task_id: chunkRef.taskId,
+        chunk_id: chunkRef.chunkId,
+        question: toJsonQuestion(result.question),
+        chunk: toJsonChunk(result.chunk)
+      });
+    });
+
+  return question;
 }
 
 function createReviewCommand(json: boolean, io: CliIo): Command {
@@ -1353,6 +1425,17 @@ function toJsonNote(note: ChunkNote) {
   };
 }
 
+function toJsonQuestion(question: ChunkQuestion) {
+  return {
+    id: question.id,
+    status: question.status,
+    body: question.body,
+    asked_at: question.asked_at,
+    answered_at: question.answered_at,
+    answer: question.answer
+  };
+}
+
 function toJsonSessionOverview(session: SessionOverview) {
   return {
     id: session.id,
@@ -1484,6 +1567,14 @@ function renderChunkList(chunks: ForemanChunk[]): string {
   }
 
   return `${chunks.map(formatChunkSummary).join("\n")}\n`;
+}
+
+function renderQuestionList(questions: ChunkQuestion[]): string {
+  if (questions.length === 0) {
+    return "No questions found.\n";
+  }
+
+  return `${questions.map(formatQuestionSummary).join("\n")}\n`;
 }
 
 function renderSessionList(sessions: SessionOverview[]): string {
@@ -1647,6 +1738,14 @@ function renderSessionCostReport(report: SessionCostReport): string {
 
 function formatChunkSummary(chunk: ForemanChunk): string {
   return `${chunk.id}  ${chunk.status}  ${chunk.stage}  ${chunk.title}`;
+}
+
+function formatQuestionSummary(question: ChunkQuestion): string {
+  if (question.status === "answered") {
+    return `${question.id}  answered  ${question.body}  answer=${firstLine(question.answer ?? "")}`;
+  }
+
+  return `${question.id}  open  ${question.body}`;
 }
 
 function formatSessionListRow(session: SessionOverview): string {

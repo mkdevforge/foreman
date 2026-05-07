@@ -83,7 +83,7 @@ function addDispatchReadinessMetadata(repo: string): void {
 
   chunk.questions = [
     {
-      id: "q-001",
+      id: "q1",
       status: "open",
       body: "Which approval policy should this chunk use?",
       asked_at: "2026-05-07T18:00:00.000Z",
@@ -91,7 +91,7 @@ function addDispatchReadinessMetadata(repo: string): void {
       answer: null
     },
     {
-      id: "q-002",
+      id: "q2",
       status: "answered",
       body: "Can this chunk alter runner behavior?",
       asked_at: "2026-05-07T18:01:00.000Z",
@@ -135,7 +135,7 @@ describe("Phase 7a dispatch readiness YAML schema", () => {
 
     expect(task.chunks[0].questions).toEqual([
       {
-        id: "q-001",
+        id: "q1",
         status: "open",
         body: "Which approval policy should this chunk use?",
         asked_at: "2026-05-07T18:00:00.000Z",
@@ -143,7 +143,7 @@ describe("Phase 7a dispatch readiness YAML schema", () => {
         answer: null
       },
       {
-        id: "q-002",
+        id: "q2",
         status: "answered",
         body: "Can this chunk alter runner behavior?",
         asked_at: "2026-05-07T18:01:00.000Z",
@@ -189,7 +189,7 @@ describe("Phase 7a dispatch readiness YAML schema", () => {
 
     task.chunks[0].questions = [
       {
-        id: "q-001",
+        id: "q1",
         status: "answered",
         body: "What is the answer?",
         asked_at: "2026-05-07T18:00:00.000Z",

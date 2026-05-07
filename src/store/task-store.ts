@@ -23,6 +23,7 @@ import {
   assertNonEmpty,
   assertValidChunkId,
   assertValidChunkStage,
+  assertValidQuestionId,
   assertValidTaskId,
   assertValidTaskStatus,
   nowIso,
@@ -52,6 +53,20 @@ export interface AddChunkInput {
 
 export interface AppendChunkNoteInput extends ChunkRef {
   body: string;
+}
+
+export interface AddChunkQuestionInput extends ChunkRef {
+  body: string;
+}
+
+export interface AnswerChunkQuestionInput extends ChunkRef {
+  questionId: string;
+  answer: string;
+}
+
+export interface ChunkQuestionMutationResult {
+  chunk: ForemanChunk;
+  question: ChunkQuestion;
 }
 
 const README_BODY = `# Foreman
@@ -223,6 +238,82 @@ export function appendChunkNote(repoRoot: string, input: AppendChunkNoteInput): 
   });
 }
 
+export function listChunkQuestions(repoRoot: string, ref: ChunkRef): ChunkQuestion[] {
+  const task = readTask(repoRoot, ref.taskId);
+  const chunk = findChunkOrThrow(task, ref);
+
+  return chunk.questions ?? [];
+}
+
+export function addChunkQuestion(repoRoot: string, input: AddChunkQuestionInput): ChunkQuestionMutationResult {
+  assertNonEmpty(input.body, "question body");
+
+  let question: ChunkQuestion | undefined;
+  const chunk = mutateChunk(repoRoot, input, (task, targetChunk) => {
+    const now = nowIso();
+    const questions = targetChunk.questions ?? [];
+
+    question = {
+      id: nextQuestionId(questions),
+      status: "open",
+      body: input.body,
+      asked_at: now,
+      answered_at: null,
+      answer: null
+    };
+
+    targetChunk.questions = [...questions, question];
+    targetChunk.updated_at = now;
+    task.updated_at = now;
+  });
+
+  if (question === undefined) {
+    throw new CliError(1, "internal_error", "failed to add question");
+  }
+
+  return { chunk, question };
+}
+
+export function answerChunkQuestion(repoRoot: string, input: AnswerChunkQuestionInput): ChunkQuestionMutationResult {
+  assertValidQuestionId(input.questionId);
+  assertNonEmpty(input.answer, "answer");
+
+  let question: ChunkQuestion | undefined;
+  const chunk = mutateChunk(repoRoot, input, (task, targetChunk) => {
+    const questions = targetChunk.questions ?? [];
+    question = questions.find((candidate) => candidate.id === input.questionId);
+
+    if (question === undefined) {
+      throw new CliError(
+        2,
+        "question_not_found",
+        `question '${input.taskId}/${input.chunkId}#${input.questionId}' was not found`
+      );
+    }
+
+    if (question.status === "answered") {
+      throw new CliError(
+        2,
+        "question_already_answered",
+        `question '${input.taskId}/${input.chunkId}#${input.questionId}' is already answered`
+      );
+    }
+
+    const now = nowIso();
+    question.status = "answered";
+    question.answered_at = now;
+    question.answer = input.answer;
+    targetChunk.updated_at = now;
+    task.updated_at = now;
+  });
+
+  if (question === undefined) {
+    throw new CliError(1, "internal_error", "failed to answer question");
+  }
+
+  return { chunk, question };
+}
+
 function mutateChunk(
   repoRoot: string,
   ref: ChunkRef,
@@ -230,14 +321,20 @@ function mutateChunk(
 ): ForemanChunk {
   const paths = requireInitialized(repoRoot);
   const task = readTask(repoRoot, ref.taskId);
+  const chunk = findChunkOrThrow(task, ref);
+
+  mutate(task, chunk);
+  writeTaskFile(paths, task);
+
+  return chunk;
+}
+
+function findChunkOrThrow(task: ForemanTask, ref: ChunkRef): ForemanChunk {
   const chunk = task.chunks.find((candidate) => candidate.id === ref.chunkId);
 
   if (chunk === undefined) {
     throw new CliError(2, "chunk_not_found", `chunk '${ref.taskId}/${ref.chunkId}' was not found`);
   }
-
-  mutate(task, chunk);
-  writeTaskFile(paths, task);
 
   return chunk;
 }
@@ -365,6 +462,9 @@ function validateChunk(value: unknown, source: string): ForemanChunk {
       : expectArray(record.questions, "questions", source).map((question, index) =>
           validateQuestion(question, `${source}: questions[${index}]`)
         );
+  if (questions !== undefined) {
+    assertUniqueIds(questions, "questions", source);
+  }
   const decisions =
     record.decisions === undefined
       ? undefined
@@ -405,6 +505,7 @@ function validateNote(value: unknown, source: string): ChunkNote {
 function validateQuestion(value: unknown, source: string): ChunkQuestion {
   const record = expectRecord(value, "question", source);
   const id = expectNonEmptyString(record.id, "id", source);
+  assertValidQuestionId(id);
   const status = expectString(record.status, "status", source);
   if (!QUESTION_STATUSES.includes(status as ChunkQuestion["status"])) {
     throw new CliError(
@@ -441,6 +542,42 @@ function validateQuestion(value: unknown, source: string): ChunkQuestion {
     answered_at: answeredAt,
     answer
   };
+}
+
+function assertUniqueIds(items: { id: string }[], fieldName: string, source: string): void {
+  const seen = new Set<string>();
+
+  for (const item of items) {
+    if (seen.has(item.id)) {
+      throw new CliError(2, "invalid_task_yaml", `${source}: duplicate ${fieldName} id '${item.id}'`);
+    }
+
+    seen.add(item.id);
+  }
+}
+
+function nextQuestionId(questions: ChunkQuestion[]): string {
+  let maxId = 0;
+
+  for (const question of questions) {
+    const match = /^q([1-9]\d*)$/.exec(question.id);
+    if (match === null) {
+      continue;
+    }
+
+    const value = Number(match[1]);
+    if (Number.isSafeInteger(value)) {
+      maxId = Math.max(maxId, value);
+    }
+  }
+
+  const existingIds = new Set(questions.map((question) => question.id));
+  let nextId = maxId + 1;
+  while (existingIds.has(`q${nextId}`)) {
+    nextId += 1;
+  }
+
+  return `q${nextId}`;
 }
 
 function validateDecision(value: unknown, source: string): ChunkDecision {

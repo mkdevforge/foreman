@@ -89,7 +89,7 @@ function addFutureMetadata(repo: string): void {
   };
   task.chunks[0].questions = [
     {
-      id: "q-001",
+      id: "q1",
       status: "open",
       body: "Which auth boundary owns token refresh?",
       asked_at: "2026-05-06T00:00:00.000Z",
@@ -144,7 +144,7 @@ describe("foreman YAML extensibility guardrail", () => {
     expect(result.exitCode).toBe(0);
     expect(task.chunks).toHaveLength(2);
     expect(task.dispatch.status).toBe("ready");
-    expect(task.chunks[0].questions[0].id).toBe("q-001");
+    expect(task.chunks[0].questions[0].id).toBe("q1");
     expect(task.chunks[0].decisions[0].id).toBe("d-001");
     expect(task.chunks[0].run_attempts[0].id).toBe("attempt-1");
     expect(task.chunks[1]).not.toHaveProperty("questions");
@@ -191,7 +191,7 @@ describe("foreman YAML extensibility guardrail", () => {
     expect(chunkStatus.chunk).not.toHaveProperty("questions");
     expect(chunkStatus.chunk).not.toHaveProperty("decisions");
     expect(chunkStatus.chunk).not.toHaveProperty("run_attempts");
-    expect(readTaskYaml(repo).chunks[0].questions[0].id).toBe("q-001");
+    expect(readTaskYaml(repo).chunks[0].questions[0].id).toBe("q1");
   });
 
   test("invalid known fields still fail validation when unknown fields are present", () => {
@@ -219,7 +219,7 @@ describe("foreman YAML extensibility guardrail", () => {
     expect(task.risk_level).toBe("medium");
     expect(task.approval_required).toBe("plan");
     expect(task.dispatch.attempts[0].id).toBe("run-1");
-    expect(task.chunks[0].questions[0].id).toBe("q-001");
+    expect(task.chunks[0].questions[0].id).toBe("q1");
     expect(task.chunks[0].decisions[0].id).toBe("d-001");
     expect(task.chunks[0].run_attempts[0].id).toBe("attempt-1");
   });

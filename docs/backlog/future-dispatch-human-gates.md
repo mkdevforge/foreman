@@ -60,7 +60,7 @@ chunks:
     status: todo
     stage: plan
     questions:
-      - id: q-001
+      - id: q1
         status: open
         body: Which auth boundary owns token refresh?
         asked_at: 2026-05-06T00:00:00.000Z
