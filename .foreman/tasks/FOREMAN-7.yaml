@@ -2,45 +2,172 @@ schema_version: 1
 id: FOREMAN-7
 title: Post-v0 dispatch readiness
 source_ref: null
-description: Dogfood Foreman in this repository while planning the first post-v0 dispatch and human-gate slice.
+description: Dogfood Foreman in this repository while implementing the first post-v0 dispatch and human-gate slices.
 status: todo
 created_at: 2026-05-07T17:37:17.715Z
-updated_at: 2026-05-07T17:38:54.341Z
+updated_at: 2026-05-07T18:22:49.000Z
 chunks:
   - id: phase7a-readiness
-    title: Questions decisions readiness
+    title: Backlog and readiness schema
     spec: >
-      Plan and implement the first post-v0 dogfood slice for Foreman dispatch readiness.
+      Establish the first post-v0 Foreman backlog inside `.foreman/tasks` and add the storage
+      foundation for dispatch readiness metadata.
 
 
       Scope:
 
-      - Add YAML-backed question and decision metadata for chunks.
+      - Treat `.foreman/tasks/*.yaml` as the active implementation backlog for current and future
+      work.
 
-      - Add minimal CLI commands to create/list/answer questions and record decisions.
+      - Keep `docs/backlog/` as historical planning reference, not the active tracker.
 
-      - Add a readiness validation command that reports whether a chunk is ready for future
-      dispatch.
+      - Define the YAML shape for chunk questions, decisions, and dispatch readiness metadata.
 
-      - Keep the implementation testable between each step and avoid launching agents or creating
-      run state in this slice.
+      - Add parser/round-trip tests proving the metadata is preserved and invalid known fields are
+      rejected.
+
+      - Do not add runner behavior, live dispatch state, or background service behavior in this
+      chunk.
 
 
       Expected outcome:
 
-      - Foreman can represent human gates in its own task YAML without full dispatch runner
+      - Foreman can represent future human-gate metadata in repo YAML without full dispatch runner
       behavior.
 
-      - JSON and text outputs are stable enough for later automation.
+      - Existing v0 task/chunk behavior continues to preserve unknown metadata and avoids storing
+      local identity in repo notes.
 
-      - Existing v0 task/chunk behavior continues to preserve unknown metadata.
+      - The next chunks can add commands against a documented storage shape.
     status: todo
     stage: discovery
     created_at: 2026-05-07T17:37:17.760Z
-    updated_at: 2026-05-07T17:38:54.341Z
+    updated_at: 2026-05-07T18:22:49.000Z
     notes:
       - ts: 2026-05-07T17:38:54.341Z
         body: "Dogfood setup complete: Foreman hooks installed for Claude Code and Codex, active context set
           to this chunk, and one real session from each tool linked back through Stop hooks.
           Observation: session list --project . did not match sessions, while the absolute project
           path did; fixed by normalizing --project paths in a follow-up."
+  - id: questions-cli
+    title: Question commands
+    spec: >
+      Add first-class question commands for chunks.
+
+
+      Scope:
+
+      - Add `foreman question add <task>/<chunk> "..."`.
+
+      - Add `foreman question list <task>/<chunk>`.
+
+      - Add `foreman question answer <task>/<chunk> <question-id> "..."`.
+
+      - Store questions in repo YAML with stable IDs, status, body, timestamps, and nullable answer
+      fields.
+
+      - Keep text and JSON output stable and useful for agents.
+
+
+      Expected outcome:
+
+      - Missing context can be captured as a successful workflow state instead of buried in notes.
+
+      - Answered questions become durable task context for later planning and implementation.
+
+      - Tests cover add/list/answer, invalid references, idempotent parsing, and JSON output.
+    status: todo
+    stage: discovery
+    created_at: 2026-05-07T18:22:49.000Z
+    updated_at: 2026-05-07T18:22:49.000Z
+    notes: []
+  - id: decisions-cli
+    title: Decision commands
+    spec: >
+      Add first-class decision commands for chunks.
+
+
+      Scope:
+
+      - Add `foreman decision add <task>/<chunk> "..."`.
+
+      - Add `foreman decision list <task>/<chunk>`.
+
+      - Store decisions in repo YAML with stable IDs, body, and timestamps.
+
+      - Do not store local author identity in repo YAML; Git history covers repo-visible authorship.
+
+      - Keep text and JSON output stable and useful for agents.
+
+
+      Expected outcome:
+
+      - Human decisions are durable context separate from review notes and session summaries.
+
+      - Later dispatch prompts can include accepted decisions without scraping free-form notes.
+
+      - Tests cover add/list, invalid references, preservation across chunk mutations, and JSON output.
+    status: todo
+    stage: discovery
+    created_at: 2026-05-07T18:22:49.000Z
+    updated_at: 2026-05-07T18:22:49.000Z
+    notes: []
+  - id: readiness-cli
+    title: Readiness validation
+    spec: >
+      Add a readiness command that reports whether a chunk is ready for future dispatch.
+
+
+      Scope:
+
+      - Add `foreman chunk ready <task>/<chunk>`.
+
+      - Validate required dispatch-readiness inputs, including non-empty spec, no open questions,
+      accepted decisions present when required by policy, and valid stage/status combinations.
+
+      - Return actionable blockers in text and JSON.
+
+      - Do not launch Claude, Codex, worktrees, or run attempts in this chunk.
+
+
+      Expected outcome:
+
+      - Foreman can distinguish a merely existing chunk from an agent-ready chunk.
+
+      - The readiness result becomes the gate before any later dispatch runner work.
+
+      - Tests cover ready, not-ready, malformed metadata, and JSON output.
+    status: todo
+    stage: discovery
+    created_at: 2026-05-07T18:22:49.000Z
+    updated_at: 2026-05-07T18:22:49.000Z
+    notes: []
+  - id: dispatch-run-model
+    title: Dispatch run model
+    spec: >
+      Design the local run-state model for future agent dispatch without implementing runners yet.
+
+
+      Scope:
+
+      - Decide whether run records live in SQLite only, YAML only, or a split model.
+
+      - Prefer local SQLite for machine/session-specific run attempts, costs, process state, and
+      local identity.
+
+      - Keep repo YAML focused on shared task context and durable human-gate metadata.
+
+      - Add schema/backlog notes and tests only if a storage change is made.
+
+
+      Expected outcome:
+
+      - The next implementation phase can add a dispatch command without guessing where run state
+      belongs.
+
+      - The design keeps committed task metadata separate from local execution details.
+    status: todo
+    stage: discovery
+    created_at: 2026-05-07T18:22:49.000Z
+    updated_at: 2026-05-07T18:22:49.000Z
+    notes: []
