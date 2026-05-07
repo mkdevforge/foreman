@@ -24,7 +24,7 @@ import {
   type SessionToolCall,
   type SessionUsage
 } from "../db/session-queries";
-import { findRepoRoot, getGitOriginRemote, getGitUserEmail, normalizeGitRemoteUrl } from "../store/repo";
+import { findRepoRoot, getGitOriginRemote, normalizeGitRemoteUrl } from "../store/repo";
 import {
   clearActiveContext,
   getActiveContextStatus,
@@ -148,6 +148,8 @@ interface SessionCostGroup {
   sessionCount: number;
   totalCostUsd: number;
 }
+
+const DEFAULT_NOTE_AUTHOR = "local";
 
 export function runForemanCli(argv: string[], io: CliIo): CliResult {
   const globals = extractGlobalFlags(argv);
@@ -388,13 +390,13 @@ function createChunkCommand(json: boolean, io: CliIo): Command {
     .description("Append a review note to a chunk.")
     .argument("<task>/<chunk>")
     .argument("<body>")
-    .option("--author <email>")
+    .option("--author <label>", `override note author label; defaults to '${DEFAULT_NOTE_AUTHOR}'`)
     .action((ref: string, body: string, options: { author?: string }) => {
       const repoRoot = findRepoRoot();
       const chunkRef = parseChunkRef(ref);
       const updatedChunk = appendChunkNote(repoRoot, {
         ...chunkRef,
-        author: resolveNoteAuthor(repoRoot, options.author),
+        author: resolveNoteAuthor(options.author),
         body
       });
       const note = updatedChunk.notes.at(-1);
@@ -480,7 +482,7 @@ function createSessionCommand(json: boolean, io: CliIo): Command {
       const sessions = withForemanDatabase((db) =>
         listSessions(db, {
           startedAtSince,
-          projectPath: options.project,
+          projectPath: normalizeSessionProjectFilter(options.project),
           source,
           unattached: options.unattached === true
         })
@@ -1438,7 +1440,7 @@ function toJsonSessionToolCall(toolCall: SessionToolCall) {
   };
 }
 
-function resolveNoteAuthor(repoRoot: string, explicitAuthor: string | undefined): string {
+function resolveNoteAuthor(explicitAuthor: string | undefined): string {
   if (explicitAuthor !== undefined) {
     const author = explicitAuthor.trim();
 
@@ -1449,16 +1451,20 @@ function resolveNoteAuthor(repoRoot: string, explicitAuthor: string | undefined)
     return author;
   }
 
-  const gitAuthor = getGitUserEmail(repoRoot);
-  if (gitAuthor === null) {
-    throw new CliError(
-      2,
-      "author_not_found",
-      "note author was not provided and git config user.email is not set; use --author <email>"
-    );
+  return DEFAULT_NOTE_AUTHOR;
+}
+
+function normalizeSessionProjectFilter(projectPath: string | undefined): string | undefined {
+  if (projectPath === undefined) {
+    return undefined;
   }
 
-  return gitAuthor;
+  const resolvedPath = resolve(projectPath);
+  try {
+    return findRepoRoot(resolvedPath);
+  } catch {
+    return resolvedPath;
+  }
 }
 
 function renderTaskList(tasks: ForemanTask[]): string {

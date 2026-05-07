@@ -50,19 +50,6 @@ function runForeman(cwd: string, argv: string[], env: NodeJS.ProcessEnv = {}) {
   };
 }
 
-function runGit(cwd: string, argv: string[]): void {
-  const result = Bun.spawnSync({
-    cmd: ["git", ...argv],
-    cwd,
-    stdout: "pipe",
-    stderr: "pipe"
-  });
-
-  if (result.exitCode !== 0) {
-    throw new Error(decodeOutput(result.stderr));
-  }
-}
-
 function decodeOutput(output: string | Uint8Array | null | undefined): string {
   if (!output) {
     return "";
@@ -141,10 +128,9 @@ describe("foreman chunk lifecycle", () => {
     expect(task.updated_at).toBe(chunk.updated_at);
   });
 
-  test("appends a note with git-config author", () => {
+  test("appends a note with the default non-identifying author label", () => {
     const repo = setupRepo();
 
-    runGit(repo, ["config", "user.email", "dev@example.com"]);
     forceOldTimestamps(repo);
     const result = runForeman(repo, ["chunk", "note", "FOREMAN-1/yaml-store", "Ready for review."]);
     const task = readTaskYaml(repo);
@@ -154,7 +140,7 @@ describe("foreman chunk lifecycle", () => {
     expect(result.stdout).toBe("Added note to chunk FOREMAN-1/yaml-store\n");
     expect(chunk.notes).toHaveLength(1);
     expect(chunk.notes[0]).toMatchObject({
-      author: "dev@example.com",
+      author: "local",
       body: "Ready for review."
     });
     expect(chunk.notes[0].ts).toMatch(isoUtcPattern);
@@ -166,7 +152,7 @@ describe("foreman chunk lifecycle", () => {
     const repo = setupRepo();
 
     expect(
-      runForeman(repo, ["chunk", "note", "FOREMAN-1/yaml-store", "First note.", "--author", "reviewer@example.com"])
+      runForeman(repo, ["chunk", "note", "FOREMAN-1/yaml-store", "First note.", "--author", "reviewer"])
         .exitCode
     ).toBe(0);
     const result = runForeman(repo, [
@@ -175,15 +161,15 @@ describe("foreman chunk lifecycle", () => {
       "FOREMAN-1/yaml-store",
       "Second note.",
       "--author",
-      "lead@example.com"
+      "lead"
     ]);
     const task = readTaskYaml(repo);
 
     expect(result.exitCode).toBe(0);
     expect(task.chunks[0].notes).toHaveLength(2);
-    expect(task.chunks[0].notes[0].author).toBe("reviewer@example.com");
+    expect(task.chunks[0].notes[0].author).toBe("reviewer");
     expect(task.chunks[0].notes[0].body).toBe("First note.");
-    expect(task.chunks[0].notes[1].author).toBe("lead@example.com");
+    expect(task.chunks[0].notes[1].author).toBe("lead");
     expect(task.chunks[0].notes[1].body).toBe("Second note.");
   });
 
@@ -204,8 +190,7 @@ describe("foreman chunk lifecycle", () => {
     expect(readTaskYaml(repo).chunks[0].run_attempts).toEqual([{ id: "attempt-1", status: "blocked" }]);
 
     expect(
-      runForeman(repo, ["chunk", "note", "FOREMAN-1/yaml-store", "Preserve metadata.", "--author", "dev@example.com"])
-        .exitCode
+      runForeman(repo, ["chunk", "note", "FOREMAN-1/yaml-store", "Preserve metadata."]).exitCode
     ).toBe(0);
     const afterNote = readTaskYaml(repo);
 
@@ -226,19 +211,14 @@ describe("foreman chunk lifecycle", () => {
     expect(result.stderr).toContain("chunk 'FOREMAN-1/missing' was not found");
   });
 
-  test("fails clearly when note author cannot be resolved", () => {
+  test("rejects blank explicit note authors", () => {
     const repo = setupRepo();
-    const emptyGlobalConfig = join(repo, "empty-gitconfig");
 
-    writeFileSync(emptyGlobalConfig, "", "utf8");
-    const result = runForeman(repo, ["chunk", "note", "FOREMAN-1/yaml-store", "No author."], {
-      GIT_CONFIG_GLOBAL: emptyGlobalConfig,
-      GIT_CONFIG_NOSYSTEM: "1"
-    });
+    const result = runForeman(repo, ["chunk", "note", "FOREMAN-1/yaml-store", "No author.", "--author", "   "]);
 
     expect(result.exitCode).toBe(2);
     expect(result.stdout).toBe("");
-    expect(result.stderr).toContain("git config user.email is not set");
+    expect(result.stderr).toContain("author must not be empty");
   });
 
   test("emits JSON envelopes for chunk mutations", () => {
@@ -257,7 +237,7 @@ describe("foreman chunk lifecycle", () => {
         "FOREMAN-1/yaml-store",
         "JSON note.",
         "--author",
-        "dev@example.com",
+        "reviewer",
         "--json"
       ]).stdout
     );
@@ -270,7 +250,7 @@ describe("foreman chunk lifecycle", () => {
     expect(note.schema_version).toBe(1);
     expect(note.chunk.notes).toHaveLength(1);
     expect(note.note.body).toBe("JSON note.");
-    expect(note.note.author).toBe("dev@example.com");
+    expect(note.note.author).toBe("reviewer");
     expect(note.note.ts).toMatch(isoUtcPattern);
   });
 });

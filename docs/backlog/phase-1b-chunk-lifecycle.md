@@ -9,7 +9,7 @@ Complete the repo-scoped chunk lifecycle on top of the Phase 1a YAML store. By t
 - Implement chunk mutation commands:
   - `foreman chunk status <task>/<chunk> <todo|doing|review|done|blocked>`
   - `foreman chunk stage <task>/<chunk> <discovery|plan|implement|review>`
-  - `foreman chunk note <task>/<chunk> "..." [--author <email>]`
+  - `foreman chunk note <task>/<chunk> "..." [--author <label>]`
 - Validate full task YAML schema from the PRD, including notes:
   - note timestamp
   - note author
@@ -32,15 +32,15 @@ Complete the repo-scoped chunk lifecycle on top of the Phase 1a YAML store. By t
 
 ## Resolved Decisions
 
-- Note author fallback: `foreman chunk note` uses `git config user.email` by default, allows `--author <email>`, and errors if neither is available.
+- Note author fallback: `foreman chunk note` uses a non-identifying `local` label by default and allows `--author <label>` when the caller wants a different repo-visible author label.
 
 ## Implementation Notes
 
 - `foreman chunk status` mutates only chunk status and timestamps.
 - `foreman chunk stage` mutates only chunk stage and timestamps.
 - `foreman chunk note` appends a note and does not edit or reorder existing notes.
-- Author comes from `--author <email>` when provided; otherwise use `git config user.email`.
-- If author cannot be resolved, fail with a clear CLI error.
+- Author comes from `--author <label>` when provided; otherwise use `local`.
+- Blank explicit authors fail with a clear CLI error.
 - Notes use ISO 8601 UTC timestamps.
 - Note body is a plain string argument in this phase. No editor, stdin, or file support.
 - Preserve the same atomic write behavior and YAML formatting stance from Phase 1a.
@@ -52,13 +52,13 @@ The phase is complete when automated tests cover:
 
 - Updating chunk status.
 - Updating chunk stage independently from status.
-- Appending a note with timestamp, git-config author, and body.
+- Appending a note with timestamp, default `local` author, and body.
 - Appending a note with an explicit `--author` override.
 - Preserving existing notes when appending another note.
 - Preserving unknown task-level and chunk-level fields when changing chunk status, changing chunk stage, and appending notes.
 - Updating task and chunk `updated_at` correctly.
 - Failing clearly when the chunk reference does not exist.
-- Failing clearly when note author cannot be resolved under the chosen policy.
+- Failing clearly when an explicit note author is blank.
 - Text output for each mutation command.
 - JSON output shape for each mutation command.
 - Semantic YAML round-trip after repeated chunk mutations.

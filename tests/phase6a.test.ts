@@ -28,7 +28,7 @@ describe("Phase 6a automated acceptance hardening", () => {
     expectJsonCommand(repo, homeDir, ["task", "status", "FOREMAN-1", "doing"], ["task"]);
     expectJsonCommand(repo, homeDir, ["chunk", "status", "FOREMAN-1/api", "doing"], ["task_id", "chunk"]);
     expectJsonCommand(repo, homeDir, ["chunk", "stage", "FOREMAN-1/api", "implement"], ["task_id", "chunk"]);
-    expectJsonCommand(repo, homeDir, ["chunk", "note", "FOREMAN-1/api", "Looks good.", "--author", "dev@example.com"], [
+    expectJsonCommand(repo, homeDir, ["chunk", "note", "FOREMAN-1/api", "Looks good.", "--author", "reviewer"], [
       "task_id",
       "chunk",
       "note"

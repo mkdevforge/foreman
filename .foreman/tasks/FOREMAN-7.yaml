@@ -40,7 +40,8 @@ chunks:
     updated_at: 2026-05-07T17:38:54.341Z
     notes:
       - ts: 2026-05-07T17:38:54.341Z
+        author: local
         body: "Dogfood setup complete: Foreman hooks installed for Claude Code and Codex, active context set
           to this chunk, and one real session from each tool linked back through Stop hooks.
           Observation: session list --project . did not match sessions, while the absolute project
-          path did; consider normalizing --project paths in a follow-up."
+          path did; fixed by normalizing --project paths in a follow-up."

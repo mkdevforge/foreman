@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import type { Database, SQLQueryBindings } from "bun:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { openForemanDatabase } from "../../src/db/client";
 
@@ -424,6 +424,25 @@ describe("foreman session query CLI", () => {
     const invalidSource = runForeman(homeDir, ["session", "list", "--source", "other"]);
     expect(invalidSource.exitCode).toBe(2);
     expect(invalidSource.stderr).toContain("invalid source 'other'");
+  });
+
+  test("normalizes relative project filters to the current Git root", () => {
+    const homeDir = createTempHome();
+    const repoProjectPath = resolve(repoRoot);
+    const session: SeedSessionInput = {
+      id: "018f2d00-dddd-7000-b000-000000000005",
+      source: "codex",
+      sourceSessionId: "codex-current-repo",
+      startedAt: new Date().toISOString(),
+      projectPath: repoProjectPath,
+      model: "gpt-5.3-codex"
+    };
+
+    seedSessions(homeDir, [session]);
+
+    expect(sessionIdsFromList(runForeman(homeDir, ["session", "list", "--project", "."]).stdout)).toEqual([
+      session.id
+    ]);
   });
 
   test("filters sessions by compact since durations and rejects invalid values", () => {

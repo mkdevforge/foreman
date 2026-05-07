@@ -56,7 +56,7 @@ Track implementation-blocking decisions here. Close each decision before impleme
 | Optional task YAML field representation | Phase 1a | Closed 2026-05-05 | Write absent `source_ref` and `description` as explicit YAML `null`; JSON output exposes explicit nullable fields. |
 | Task and chunk identifier rules | Phase 1a | Closed 2026-05-05 | Task IDs match `[A-Za-z0-9][A-Za-z0-9._-]*` and preserve case; chunk IDs match `[a-z0-9][a-z0-9-]*`. |
 | Task YAML extensibility policy | Phase 1c | Closed 2026-05-06 | v0 readers/writers validate known fields but preserve unknown task-level and chunk-level YAML fields for future dispatch metadata. |
-| Note author fallback | Phase 1b | Closed 2026-05-05 | `chunk note` uses `git config user.email` by default, allows `--author <email>`, and errors if neither is available. |
+| Note author fallback | Phase 1b | Amended 2026-05-07 | `chunk note` uses a non-identifying `local` repo-visible author label by default and allows `--author <label>` for explicit overrides. It does not read `git config user.email` for repo YAML notes. |
 | Duration filter syntax | Phase 2b | Closed 2026-05-05 | `--since` accepts compact relative durations with units `m`, `h`, `d`, and `w`, such as `30m`, `24h`, `7d`, or `2w`. |
 | Worktree support policy | Phases 3a, 3b, 4, 5 | Closed 2026-05-06 | Store the actual session worktree path as `project_path`; task YAML may live in a separate Foreman control worktree, with sibling worktrees preferred. Later linkage/review must not assume session cwd and task metadata root are the same path. |
 | UUID generation dependency | Phase 3b | Closed 2026-05-06 | Use the `uuid` package and its `v7()` API for production IDs. Tests inject deterministic ID generation. Do not hand-roll UUIDv7. |
