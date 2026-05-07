@@ -1,16 +1,20 @@
 import { Command, CommanderError } from "commander";
 import type { Database } from "bun:sqlite";
-import { readFileSync } from "node:fs";
+import { readFileSync, readSync } from "node:fs";
 import { resolve } from "node:path";
 import { CliError, type ExitCode } from "./errors";
 import { formatJsonData, formatJsonError, renderTextError } from "./output";
 import { openForemanDatabase } from "../db/client";
+import { linkSessionChunk, unlinkSessionChunk } from "../db/session-writes";
 import {
   SESSION_SOURCES,
   getLastSession,
   getSessionById,
+  listLinkedSessionsForChunk,
+  listLinkedSessionsForTask,
   listSessions,
   resolveSessionPrefix,
+  type LinkedSessionDetail,
   type SessionChunkLink,
   type SessionDetail,
   type SessionOverview,
@@ -20,7 +24,7 @@ import {
   type SessionToolCall,
   type SessionUsage
 } from "../db/session-queries";
-import { findRepoRoot, getGitUserEmail } from "../store/repo";
+import { findRepoRoot, getGitOriginRemote, getGitUserEmail, normalizeGitRemoteUrl } from "../store/repo";
 import {
   clearActiveContext,
   getActiveContextStatus,
@@ -55,6 +59,7 @@ export type WriteFn = (text: string) => void;
 export interface CliIo {
   stdout: WriteFn;
   stderr: WriteFn;
+  readLine?: () => string | null;
 }
 
 export interface CliResult {
@@ -64,6 +69,84 @@ export interface CliResult {
 interface GlobalFlags {
   json: boolean;
   argv: string[];
+}
+
+interface ChunkReview {
+  kind: "chunk";
+  task: ForemanTask;
+  chunk: ForemanChunk;
+  linkedSessions: LinkedSessionDetail[];
+  totalCostUsd: number;
+}
+
+interface TaskReview {
+  kind: "task";
+  task: ForemanTask;
+  linkedSessions: LinkedSessionDetail[];
+  chunkRollups: ChunkReviewRollup[];
+  totalLinkedSessions: number;
+  totalCostUsd: number;
+}
+
+interface ChunkReviewRollup {
+  chunk: ForemanChunk;
+  linkedSessionCount: number;
+  totalCostUsd: number;
+}
+
+interface CatalogOptions {
+  all?: boolean;
+  since?: string;
+  link?: string;
+  unlink?: string;
+  stage?: string;
+}
+
+interface CatalogScope {
+  all: boolean;
+  repoRoot: string;
+  repoRemote: string | null;
+  normalizedRepoRemote: string | null;
+  pathOnly: boolean;
+}
+
+interface CatalogListing {
+  scope: CatalogScope;
+  startedAtSince: string | null;
+  candidates: SessionOverview[];
+}
+
+interface CatalogOneShotResult {
+  action: "link" | "unlink";
+  sessionId: string;
+  taskId: string;
+  chunkId: string;
+  stage: string | null;
+  linkedBy: "catalog" | null;
+  changed: boolean;
+}
+
+type CostGroupBy = "project" | "task" | "chunk" | "model" | "source" | "day";
+
+interface SessionCostReport {
+  by: CostGroupBy;
+  since: string | null;
+  groups: SessionCostGroup[];
+  overall: {
+    sessionCount: number;
+    totalCostUsd: number;
+  };
+}
+
+interface SessionCostGroup {
+  source?: SessionSource;
+  projectPath?: string;
+  taskId?: string | null;
+  chunkId?: string | null;
+  model?: string | null;
+  day?: string;
+  sessionCount: number;
+  totalCostUsd: number;
 }
 
 export function runForemanCli(argv: string[], io: CliIo): CliResult {
@@ -166,6 +249,8 @@ function createProgram(json: boolean, io: CliIo): Command {
       writeData(json, io, renderActiveStatus(status), toJsonActiveStatus(status));
     });
 
+  program.addCommand(createReviewCommand(json, io));
+  program.addCommand(createCatalogCommand(json, io));
   program.addCommand(createTaskCommand(json, io));
   program.addCommand(createChunkCommand(json, io));
   program.addCommand(createSessionCommand(json, io));
@@ -324,6 +409,58 @@ function createChunkCommand(json: boolean, io: CliIo): Command {
   return chunk;
 }
 
+function createReviewCommand(json: boolean, io: CliIo): Command {
+  return configureCommand(new Command("review"), io)
+    .description("Review task or chunk metadata with linked session data.")
+    .argument("<task-or-chunk>")
+    .option("--full", "include prompt and tool-call details for chunk-linked sessions")
+    .action((ref: string, options: { full?: boolean }) => {
+      if (ref.includes("/")) {
+        const review = buildChunkReview(ref, options.full === true);
+
+        writeData(json, io, renderChunkReview(review), { review: toJsonChunkReview(review) });
+        return;
+      }
+
+      const review = buildTaskReview(ref);
+      writeData(json, io, renderTaskReview(review), { review: toJsonTaskReview(review) });
+    });
+}
+
+function createCatalogCommand(json: boolean, io: CliIo): Command {
+  return configureCommand(new Command("catalog"), io)
+    .description("List unattached sessions and link or unlink them to chunks.")
+    .argument("[task>/<chunk>")
+    .option("--all", "include sessions from every project")
+    .option("--since <duration>")
+    .option("--link <session-prefix>")
+    .option("--unlink <session-prefix>")
+    .option("--stage <stage>")
+    .action((ref: string | undefined, options: CatalogOptions) => {
+      if (options.link !== undefined || options.unlink !== undefined) {
+        const result = runCatalogOneShot(ref, options);
+        writeData(json, io, renderCatalogOneShotResult(result), { catalog: toJsonCatalogOneShotResult(result) });
+        return;
+      }
+
+      if (ref !== undefined) {
+        throw new CliError(2, "invalid_catalog_command", "catalog task/chunk argument is only valid with --link or --unlink");
+      }
+
+      if (options.stage !== undefined) {
+        throw new CliError(2, "invalid_catalog_command", "--stage is only valid with --link");
+      }
+
+      const listing = buildCatalogListing(options);
+      if (json) {
+        writeData(true, io, "", { catalog: toJsonCatalogListing(listing) });
+        return;
+      }
+
+      runInteractiveCatalog(listing, io);
+    });
+}
+
 function createSessionCommand(json: boolean, io: CliIo): Command {
   const session = configureCommand(new Command("session"), io)
     .description("Query recorded agent sessions.")
@@ -350,6 +487,19 @@ function createSessionCommand(json: boolean, io: CliIo): Command {
       );
 
       writeData(json, io, renderSessionList(sessions), { sessions: sessions.map(toJsonSessionOverview) });
+    });
+
+  configureCommand(session.command("cost"), io)
+    .description("Report estimated session costs.")
+    .option("--since <duration>")
+    .option("--by <dimension>", "project, task, chunk, model, source, or day")
+    .action((options: { since?: string; by?: string }) => {
+      const report = buildSessionCostReport({
+        since: parseSinceOption(options.since),
+        by: parseCostGroupBy(options.by)
+      });
+
+      writeData(json, io, renderSessionCostReport(report), { cost: toJsonSessionCostReport(report) });
     });
 
   configureCommand(session.command("show"), io)
@@ -642,6 +792,535 @@ function parseSessionSourceOption(value: string | undefined): SessionSource | un
   return value as SessionSource;
 }
 
+function parseCostGroupBy(value: string | undefined): CostGroupBy {
+  const allowed = ["project", "task", "chunk", "model", "source", "day"] as const;
+  if (value === undefined) {
+    return "source";
+  }
+
+  if (!allowed.includes(value as CostGroupBy)) {
+    throw new CliError(2, "invalid_cost_group", `invalid --by value '${value}'; expected one of ${allowed.join(", ")}`);
+  }
+
+  return value as CostGroupBy;
+}
+
+function buildChunkReview(ref: string, full: boolean): ChunkReview {
+  const repoRoot = findRepoRoot();
+  const chunkRef = parseChunkRef(ref);
+  const task = readTask(repoRoot, chunkRef.taskId);
+  const chunk = findTaskChunk(task, chunkRef.chunkId);
+  const linkedSessions = withForemanDatabase((db) =>
+    listLinkedSessionsForChunk(db, chunkRef.taskId, chunkRef.chunkId, full)
+  );
+
+  return {
+    kind: "chunk",
+    task,
+    chunk,
+    linkedSessions,
+    totalCostUsd: totalDistinctLinkedSessionCost(linkedSessions)
+  };
+}
+
+function buildTaskReview(taskId: string): TaskReview {
+  const repoRoot = findRepoRoot();
+  const task = readTask(repoRoot, taskId);
+  const linkedSessions = withForemanDatabase((db) => listLinkedSessionsForTask(db, task.id));
+  const chunkRollups = task.chunks.map((chunk) => {
+    const chunkLinks = linkedSessions.filter((entry) => entry.link.chunk_id === chunk.id);
+
+    return {
+      chunk,
+      linkedSessionCount: countDistinctSessions(chunkLinks),
+      totalCostUsd: totalDistinctLinkedSessionCost(chunkLinks)
+    };
+  });
+
+  return {
+    kind: "task",
+    task,
+    linkedSessions,
+    chunkRollups,
+    totalLinkedSessions: countDistinctSessions(linkedSessions),
+    totalCostUsd: totalDistinctLinkedSessionCost(linkedSessions)
+  };
+}
+
+function runCatalogOneShot(ref: string | undefined, options: CatalogOptions): CatalogOneShotResult {
+  if (options.link !== undefined && options.unlink !== undefined) {
+    throw new CliError(2, "invalid_catalog_command", "use only one of --link or --unlink");
+  }
+
+  if (ref === undefined) {
+    throw new CliError(2, "missing_chunk_ref", "catalog --link and --unlink require <task>/<chunk>");
+  }
+
+  if (options.link !== undefined) {
+    return linkCatalogSession(options.link, ref, options.stage);
+  }
+
+  if (options.unlink !== undefined) {
+    if (options.stage !== undefined) {
+      throw new CliError(2, "invalid_catalog_command", "--stage is only valid with --link");
+    }
+
+    return unlinkCatalogSession(options.unlink, ref);
+  }
+
+  throw new CliError(2, "invalid_catalog_command", "expected --link or --unlink");
+}
+
+function linkCatalogSession(prefix: string, ref: string, stageOverride: string | undefined): CatalogOneShotResult {
+  const repoRoot = findRepoRoot();
+  const chunkRef = parseChunkRef(ref);
+  const task = readTask(repoRoot, chunkRef.taskId);
+  const chunk = findTaskChunk(task, chunkRef.chunkId);
+  let stage = chunk.stage;
+
+  if (stageOverride !== undefined) {
+    assertValidChunkStage(stageOverride);
+    stage = stageOverride;
+  }
+
+  const changed = withForemanDatabase((db) => {
+    const sessionId = resolveSessionIdOrThrow(db, prefix);
+    const changes = linkSessionChunk(db, {
+      sessionId,
+      taskId: chunkRef.taskId,
+      chunkId: chunkRef.chunkId,
+      stage,
+      linkedAt: new Date().toISOString(),
+      linkedBy: "catalog"
+    });
+
+    return { sessionId, changes };
+  });
+
+  return {
+    action: "link",
+    sessionId: changed.sessionId,
+    taskId: chunkRef.taskId,
+    chunkId: chunkRef.chunkId,
+    stage,
+    linkedBy: "catalog",
+    changed: changed.changes > 0
+  };
+}
+
+function unlinkCatalogSession(prefix: string, ref: string): CatalogOneShotResult {
+  const repoRoot = findRepoRoot();
+  const chunkRef = parseChunkRef(ref);
+  const task = readTask(repoRoot, chunkRef.taskId);
+  findTaskChunk(task, chunkRef.chunkId);
+
+  const changed = withForemanDatabase((db) => {
+    const sessionId = resolveSessionIdOrThrow(db, prefix);
+    const changes = unlinkSessionChunk(db, {
+      sessionId,
+      taskId: chunkRef.taskId,
+      chunkId: chunkRef.chunkId
+    });
+
+    return { sessionId, changes };
+  });
+
+  return {
+    action: "unlink",
+    sessionId: changed.sessionId,
+    taskId: chunkRef.taskId,
+    chunkId: chunkRef.chunkId,
+    stage: null,
+    linkedBy: null,
+    changed: changed.changes > 0
+  };
+}
+
+function buildCatalogListing(options: CatalogOptions): CatalogListing {
+  const startedAtSince = parseSinceOption(options.since) ?? null;
+  const scope = resolveCatalogScope(options.all === true);
+  const candidates = withForemanDatabase((db) =>
+    listSessions(db, {
+      startedAtSince: startedAtSince ?? undefined,
+      unattached: true
+    })
+  ).filter((session) => catalogScopeIncludesSession(scope, session));
+
+  return { scope, startedAtSince, candidates };
+}
+
+function resolveCatalogScope(all: boolean): CatalogScope {
+  const repoRoot = findRepoRoot();
+  const repoRemote = getGitOriginRemote(repoRoot);
+
+  return {
+    all,
+    repoRoot,
+    repoRemote,
+    normalizedRepoRemote: repoRemote === null ? null : normalizeGitRemoteUrl(repoRemote),
+    pathOnly: !all && repoRemote === null
+  };
+}
+
+function catalogScopeIncludesSession(scope: CatalogScope, session: SessionOverview): boolean {
+  if (scope.all) {
+    return true;
+  }
+
+  if (scope.normalizedRepoRemote !== null) {
+    return (
+      session.repo_remote !== null &&
+      normalizeGitRemoteUrl(session.repo_remote) === scope.normalizedRepoRemote
+    );
+  }
+
+  return session.project_path === scope.repoRoot;
+}
+
+function runInteractiveCatalog(listing: CatalogListing, io: CliIo): void {
+  io.stdout(renderCatalogListing(listing));
+  if (listing.candidates.length === 0) {
+    return;
+  }
+
+  for (const candidate of listing.candidates) {
+    io.stdout(`Catalog candidate ${candidate.id}\n`);
+
+    while (true) {
+      io.stdout("Link to <task>/<chunk>, skip, or quit: ");
+      const line = readCatalogLine(io);
+      if (line === null) {
+        io.stdout("\n");
+        return;
+      }
+
+      const answer = line.trim();
+      if (answer.length === 0) {
+        io.stdout("Enter a chunk ref, skip, or quit.\n");
+        continue;
+      }
+
+      if (answer.toLowerCase() === "skip") {
+        io.stdout(`Skipped ${candidate.id}.\n`);
+        break;
+      }
+
+      if (answer.toLowerCase() === "quit") {
+        io.stdout("Stopped catalog.\n");
+        return;
+      }
+
+      try {
+        const result = linkCatalogSession(candidate.id, answer, undefined);
+        io.stdout(renderCatalogOneShotResult(result));
+        break;
+      } catch (error) {
+        if (error instanceof CliError) {
+          io.stdout(`Invalid selection: ${error.message}\n`);
+          continue;
+        }
+
+        throw error;
+      }
+    }
+  }
+}
+
+function readCatalogLine(io: CliIo): string | null {
+  return io.readLine?.() ?? readLineFromStdin();
+}
+
+function readLineFromStdin(): string | null {
+  const buffer = Buffer.alloc(1);
+  let line = "";
+
+  while (true) {
+    const bytesRead = readSync(0, buffer, 0, 1, null);
+    if (bytesRead === 0) {
+      return line.length === 0 ? null : line;
+    }
+
+    const char = buffer.toString("utf8", 0, bytesRead);
+    if (char === "\n") {
+      return line;
+    }
+
+    if (char !== "\r") {
+      line += char;
+    }
+  }
+}
+
+function buildSessionCostReport(input: { since: string | undefined; by: CostGroupBy }): SessionCostReport {
+  const sessions = withForemanDatabase((db) => listSessions(db, { startedAtSince: input.since }));
+  const groups = new Map<string, { group: Omit<SessionCostGroup, "sessionCount" | "totalCostUsd">; sessionIds: Set<string>; totalCostUsd: number }>();
+
+  for (const session of sessions) {
+    for (const group of costGroupsForSession(session, input.by)) {
+      const key = costGroupKey(input.by, group);
+      const accumulator =
+        groups.get(key) ??
+        {
+          group,
+          sessionIds: new Set<string>(),
+          totalCostUsd: 0
+        };
+
+      if (!accumulator.sessionIds.has(session.id)) {
+        accumulator.sessionIds.add(session.id);
+        accumulator.totalCostUsd += sessionCostUsd(session);
+      }
+
+      groups.set(key, accumulator);
+    }
+  }
+
+  const costGroups = [...groups.values()]
+    .map((entry) => ({
+      ...entry.group,
+      sessionCount: entry.sessionIds.size,
+      totalCostUsd: roundCost(entry.totalCostUsd)
+    }))
+    .sort((left, right) => costGroupSortKey(input.by, left).localeCompare(costGroupSortKey(input.by, right)));
+
+  return {
+    by: input.by,
+    since: input.since ?? null,
+    groups: costGroups,
+    overall: {
+      sessionCount: sessions.length,
+      totalCostUsd: roundCost(sessions.reduce((total, session) => total + sessionCostUsd(session), 0))
+    }
+  };
+}
+
+function costGroupsForSession(
+  session: SessionOverview,
+  by: CostGroupBy
+): Omit<SessionCostGroup, "sessionCount" | "totalCostUsd">[] {
+  if (by === "source") {
+    return [{ source: session.source }];
+  }
+
+  if (by === "project") {
+    return [{ projectPath: session.project_path }];
+  }
+
+  if (by === "model") {
+    return [{ model: session.model }];
+  }
+
+  if (by === "day") {
+    return [{ day: session.started_at.slice(0, 10) }];
+  }
+
+  if (session.linked_chunks.length === 0) {
+    return by === "task" ? [{ taskId: null }] : [{ taskId: null, chunkId: null }];
+  }
+
+  if (by === "task") {
+    return [...new Set(session.linked_chunks.map((link) => link.task_id))].map((taskId) => ({ taskId }));
+  }
+
+  const chunkKeys = new Map<string, { taskId: string; chunkId: string }>();
+  for (const link of session.linked_chunks) {
+    chunkKeys.set(`${link.task_id}/${link.chunk_id}`, { taskId: link.task_id, chunkId: link.chunk_id });
+  }
+
+  return [...chunkKeys.values()];
+}
+
+function costGroupKey(by: CostGroupBy, group: Omit<SessionCostGroup, "sessionCount" | "totalCostUsd">): string {
+  return `${by}:${JSON.stringify(group)}`;
+}
+
+function costGroupSortKey(by: CostGroupBy, group: SessionCostGroup): string {
+  if (by === "source") {
+    return group.source ?? "";
+  }
+
+  if (by === "project") {
+    return group.projectPath ?? "";
+  }
+
+  if (by === "model") {
+    return group.model ?? "";
+  }
+
+  if (by === "day") {
+    return group.day ?? "";
+  }
+
+  if (by === "task") {
+    return group.taskId ?? "";
+  }
+
+  return `${group.taskId ?? ""}/${group.chunkId ?? ""}`;
+}
+
+function resolveSessionIdOrThrow(db: Database, prefix: string): string {
+  const resolved = resolveSessionPrefix(db, prefix);
+
+  if (resolved.kind === "missing") {
+    throw new CliError(1, "session_not_found", `session '${prefix}' was not found`);
+  }
+
+  if (resolved.kind === "ambiguous") {
+    throw new CliError(
+      1,
+      "ambiguous_session_prefix",
+      `session prefix '${prefix}' is ambiguous; candidates: ${resolved.candidates.join(", ")}`
+    );
+  }
+
+  return resolved.id;
+}
+
+function findTaskChunk(task: ForemanTask, chunkId: string): ForemanChunk {
+  const chunk = task.chunks.find((candidate) => candidate.id === chunkId);
+
+  if (chunk === undefined) {
+    throw new CliError(2, "chunk_not_found", `chunk '${task.id}/${chunkId}' was not found`);
+  }
+
+  return chunk;
+}
+
+function countDistinctSessions(entries: LinkedSessionDetail[]): number {
+  return new Set(entries.map((entry) => entry.session.id)).size;
+}
+
+function totalDistinctLinkedSessionCost(entries: LinkedSessionDetail[]): number {
+  const seen = new Set<string>();
+  let total = 0;
+
+  for (const entry of entries) {
+    if (seen.has(entry.session.id)) {
+      continue;
+    }
+
+    seen.add(entry.session.id);
+    total += sessionCostUsd(entry.session);
+  }
+
+  return roundCost(total);
+}
+
+function sessionCostUsd(session: SessionOverview): number {
+  return session.usage?.cost_usd ?? 0;
+}
+
+function roundCost(value: number): number {
+  return Number(value.toFixed(6));
+}
+
+function toJsonChunkReview(review: ChunkReview) {
+  return {
+    type: review.kind,
+    task: toJsonTask(review.task),
+    chunk: toJsonChunk(review.chunk),
+    linked_sessions_by_stage: groupLinkedSessionsByStage(review.linkedSessions).map((group) => ({
+      stage: group.stage,
+      total_cost_usd: totalDistinctLinkedSessionCost(group.entries),
+      sessions: group.entries.map(toJsonLinkedSession)
+    })),
+    total_cost_usd: review.totalCostUsd
+  };
+}
+
+function toJsonTaskReview(review: TaskReview) {
+  return {
+    type: review.kind,
+    task: toJsonTask(review.task),
+    chunk_rollups: review.chunkRollups.map((rollup) => ({
+      chunk: toJsonChunk(rollup.chunk),
+      linked_session_count: rollup.linkedSessionCount,
+      total_cost_usd: rollup.totalCostUsd
+    })),
+    linked_sessions: review.linkedSessions.map(toJsonLinkedSession),
+    total_linked_sessions: review.totalLinkedSessions,
+    total_cost_usd: review.totalCostUsd
+  };
+}
+
+function toJsonLinkedSession(entry: LinkedSessionDetail) {
+  return {
+    link: toJsonSessionChunkLink(entry.link),
+    session: toJsonSessionDetail(entry.session)
+  };
+}
+
+function toJsonCatalogListing(listing: CatalogListing) {
+  return {
+    scope: toJsonCatalogScope(listing.scope),
+    started_at_since: listing.startedAtSince,
+    candidates: listing.candidates.map(toJsonSessionOverview)
+  };
+}
+
+function toJsonCatalogOneShotResult(result: CatalogOneShotResult) {
+  return {
+    action: result.action,
+    session_id: result.sessionId,
+    task_id: result.taskId,
+    chunk_id: result.chunkId,
+    stage: result.stage,
+    linked_by: result.linkedBy,
+    changed: result.changed
+  };
+}
+
+function toJsonCatalogScope(scope: CatalogScope) {
+  return {
+    all: scope.all,
+    repo_root: scope.repoRoot,
+    repo_remote: scope.repoRemote,
+    normalized_repo_remote: scope.normalizedRepoRemote,
+    path_only: scope.pathOnly
+  };
+}
+
+function toJsonSessionCostReport(report: SessionCostReport) {
+  return {
+    by: report.by,
+    since: report.since,
+    overall: {
+      session_count: report.overall.sessionCount,
+      total_cost_usd: report.overall.totalCostUsd
+    },
+    groups: report.groups.map((group) => toJsonSessionCostGroup(report.by, group))
+  };
+}
+
+function toJsonSessionCostGroup(by: CostGroupBy, group: SessionCostGroup) {
+  const base = {
+    session_count: group.sessionCount,
+    total_cost_usd: group.totalCostUsd
+  };
+
+  if (by === "source") {
+    return { source: group.source ?? null, ...base };
+  }
+
+  if (by === "project") {
+    return { project_path: group.projectPath ?? null, ...base };
+  }
+
+  if (by === "model") {
+    return { model: group.model ?? null, ...base };
+  }
+
+  if (by === "day") {
+    return { day: group.day ?? null, ...base };
+  }
+
+  if (by === "task") {
+    return { task_id: group.taskId ?? null, ...base };
+  }
+
+  return { task_id: group.taskId ?? null, chunk_id: group.chunkId ?? null, ...base };
+}
+
 function toJsonTask(task: ForemanTask) {
   return {
     schema_version: task.schema_version,
@@ -859,6 +1538,126 @@ function renderSessionShow(session: SessionDetail): string {
   return `${lines.join("\n")}\n`;
 }
 
+function renderChunkReview(review: ChunkReview): string {
+  const lines = [
+    `Chunk Review ${review.task.id}/${review.chunk.id}`,
+    `Task title: ${review.task.title}`,
+    `Chunk title: ${review.chunk.title}`,
+    `Status: ${review.chunk.status}`,
+    `Stage: ${review.chunk.stage}`,
+    `Created: ${review.chunk.created_at}`,
+    `Updated: ${review.chunk.updated_at}`,
+    "Spec:",
+    ...renderIndentedBlock(review.chunk.spec),
+    "Notes:",
+    ...renderChunkNotes(review.chunk.notes),
+    "Linked sessions:"
+  ];
+
+  if (review.linkedSessions.length === 0) {
+    lines.push("  none");
+  } else {
+    for (const group of groupLinkedSessionsByStage(review.linkedSessions)) {
+      lines.push(`  Stage ${group.stage}:`);
+      lines.push(...group.entries.flatMap((entry) => renderLinkedSession(entry, "    ")));
+    }
+  }
+
+  lines.push(`Total linked cost_usd: ${formatCostUsd(review.totalCostUsd)}`);
+  return `${lines.join("\n")}\n`;
+}
+
+function renderTaskReview(review: TaskReview): string {
+  const lines = [
+    `Task Review ${review.task.id}`,
+    `Title: ${review.task.title}`,
+    `Status: ${review.task.status}`,
+    `Source: ${review.task.source_ref ?? "null"}`,
+    "Description:",
+    ...renderIndentedBlock(review.task.description),
+    `Created: ${review.task.created_at}`,
+    `Updated: ${review.task.updated_at}`,
+    "Chunks:"
+  ];
+
+  if (review.chunkRollups.length === 0) {
+    lines.push("  none");
+  } else {
+    lines.push(
+      ...review.chunkRollups.map(
+        (rollup) =>
+          `  ${formatChunkSummary(rollup.chunk)}  linked_sessions=${rollup.linkedSessionCount}  cost_usd=${formatCostUsd(rollup.totalCostUsd)}`
+      )
+    );
+  }
+
+  lines.push(
+    "Linked sessions:",
+    ...renderTaskLinkedSessions(review.linkedSessions),
+    `Total linked sessions: ${review.totalLinkedSessions}`,
+    `Total linked cost_usd: ${formatCostUsd(review.totalCostUsd)}`
+  );
+
+  return `${lines.join("\n")}\n`;
+}
+
+function renderCatalogListing(listing: CatalogListing): string {
+  const lines = [
+    "Catalog candidates",
+    `Scope: ${formatCatalogScope(listing.scope)}`,
+    `Since: ${listing.startedAtSince ?? "null"}`
+  ];
+
+  if (listing.scope.pathOnly) {
+    lines.push("No origin remote found; catalog is limited to this worktree path. Use --all to include other projects.");
+  }
+
+  if (listing.candidates.length === 0) {
+    lines.push("No catalog candidates found.");
+  } else {
+    for (const candidate of listing.candidates) {
+      lines.push(...renderCatalogCandidate(candidate));
+    }
+  }
+
+  return `${lines.join("\n")}\n`;
+}
+
+function renderCatalogOneShotResult(result: CatalogOneShotResult): string {
+  if (result.action === "link") {
+    return [
+      `${result.changed ? "Linked" : "Already linked"} session ${result.sessionId} to ${result.taskId}/${result.chunkId}.`,
+      `Stage: ${result.stage}`,
+      `Linked by: ${result.linkedBy}`,
+      ""
+    ].join("\n");
+  }
+
+  return `${result.changed ? "Unlinked" : "No existing link for"} session ${result.sessionId} from ${result.taskId}/${result.chunkId}.\n`;
+}
+
+function renderSessionCostReport(report: SessionCostReport): string {
+  const lines = [
+    `Session cost by ${report.by}`,
+    `Since: ${report.since ?? "null"}`,
+    `Overall: sessions=${report.overall.sessionCount} cost_usd=${formatCostUsd(report.overall.totalCostUsd)}`,
+    "Groups:"
+  ];
+
+  if (report.groups.length === 0) {
+    lines.push("  none");
+  } else {
+    lines.push(
+      ...report.groups.map(
+        (group) =>
+          `  ${formatCostGroupLabel(report.by, group)}  sessions=${group.sessionCount}  cost_usd=${formatCostUsd(group.totalCostUsd)}`
+      )
+    );
+  }
+
+  return `${lines.join("\n")}\n`;
+}
+
 function formatChunkSummary(chunk: ForemanChunk): string {
   return `${chunk.id}  ${chunk.status}  ${chunk.stage}  ${chunk.title}`;
 }
@@ -946,6 +1745,122 @@ function renderSessionToolCalls(toolCalls: SessionToolCall[]): string[] {
     `    params: ${toolCall.params_json}`,
     `    result: ${toolCall.result_json ?? "null"}`
   ]);
+}
+
+function groupLinkedSessionsByStage(entries: LinkedSessionDetail[]): { stage: string; entries: LinkedSessionDetail[] }[] {
+  const groups = new Map<string, LinkedSessionDetail[]>();
+
+  for (const entry of entries) {
+    const group = groups.get(entry.link.stage) ?? [];
+    group.push(entry);
+    groups.set(entry.link.stage, group);
+  }
+
+  return [...groups.entries()].map(([stage, groupEntries]) => ({ stage, entries: groupEntries }));
+}
+
+function renderChunkNotes(notes: ChunkNote[]): string[] {
+  if (notes.length === 0) {
+    return ["  none"];
+  }
+
+  return notes.flatMap((note) => [
+    `  ${note.ts}  ${note.author}`,
+    ...renderIndentedBlock(note.body).map((line) => `  ${line}`)
+  ]);
+}
+
+function renderLinkedSession(entry: LinkedSessionDetail, prefix: string): string[] {
+  const session = entry.session;
+  const lines = [
+    `${prefix}Session ${session.id}`,
+    `${prefix}  Source: ${session.source}`,
+    `${prefix}  Started: ${session.started_at}`,
+    `${prefix}  Ended: ${session.ended_at}`,
+    `${prefix}  Project: ${session.project_path}`,
+    `${prefix}  Repo remote: ${session.repo_remote ?? "null"}`,
+    `${prefix}  Model: ${session.model ?? "null"}`,
+    `${prefix}  Usage: ${formatSessionUsage(session.usage)}`,
+    `${prefix}  Link: ${formatSessionChunkLink(entry.link)}`,
+    `${prefix}  Summary:`,
+    ...renderSessionSummary(session.summary).map((line) => `${prefix}${line}`)
+  ];
+
+  if (session.prompts !== undefined) {
+    lines.push(`${prefix}  Prompts:`, ...renderSessionPrompts(session.prompts).map((line) => `${prefix}${line}`));
+  }
+
+  if (session.tool_calls !== undefined) {
+    lines.push(`${prefix}  Tool calls:`, ...renderSessionToolCalls(session.tool_calls).map((line) => `${prefix}${line}`));
+  }
+
+  return lines;
+}
+
+function renderTaskLinkedSessions(entries: LinkedSessionDetail[]): string[] {
+  if (entries.length === 0) {
+    return ["  none"];
+  }
+
+  return entries.map(
+    (entry) =>
+      `  ${entry.session.id}  ${entry.link.task_id}/${entry.link.chunk_id}  ${entry.link.stage}  cost_usd=${formatCostUsd(sessionCostUsd(entry.session))}  summary=${firstLine(entry.session.summary?.summary_md ?? "null")}`
+  );
+}
+
+function renderCatalogCandidate(session: SessionOverview): string[] {
+  return [
+    `Session ${session.id}`,
+    `  Source: ${session.source}`,
+    `  Started: ${session.started_at}`,
+    `  Ended: ${session.ended_at}`,
+    `  Project: ${session.project_path}`,
+    `  Repo remote: ${session.repo_remote ?? "null"}`,
+    `  Model: ${session.model ?? "null"}`,
+    `  Cost_usd: ${formatSessionCost(session.usage)}`,
+    "  Summary:",
+    ...renderSessionSummary(session.summary).map((line) => `  ${line}`)
+  ];
+}
+
+function formatCatalogScope(scope: CatalogScope): string {
+  if (scope.all) {
+    return "all projects";
+  }
+
+  if (scope.repoRemote !== null) {
+    return `origin ${scope.repoRemote} (${scope.normalizedRepoRemote})`;
+  }
+
+  return `project path ${scope.repoRoot}`;
+}
+
+function formatCostGroupLabel(by: CostGroupBy, group: SessionCostGroup): string {
+  if (by === "source") {
+    return `source=${group.source ?? "null"}`;
+  }
+
+  if (by === "project") {
+    return `project=${group.projectPath ?? "null"}`;
+  }
+
+  if (by === "model") {
+    return `model=${group.model ?? "null"}`;
+  }
+
+  if (by === "day") {
+    return `day=${group.day ?? "null"}`;
+  }
+
+  if (by === "task") {
+    return `task=${group.taskId ?? "null"}`;
+  }
+
+  return `chunk=${group.taskId === null || group.chunkId === null ? "null" : `${group.taskId}/${group.chunkId}`}`;
+}
+
+function formatCostUsd(value: number): string {
+  return value.toFixed(4);
 }
 
 function firstLine(value: string): string {

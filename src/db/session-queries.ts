@@ -68,6 +68,11 @@ export interface SessionDetail extends SessionOverview {
   tool_calls?: SessionToolCall[];
 }
 
+export interface LinkedSessionDetail {
+  session: SessionDetail;
+  link: SessionChunkLink;
+}
+
 export interface ListSessionsFilters {
   startedAtSince?: string;
   projectPath?: string;
@@ -88,6 +93,14 @@ interface ToolCallRow {
   result_json: string | null;
   is_error: number;
   params_hash: string;
+}
+
+interface LinkedSessionRow extends SessionRecord {
+  link_task_id: string;
+  link_chunk_id: string;
+  link_stage: string;
+  link_linked_at: string;
+  link_linked_by: string;
 }
 
 export function listSessions(db: Database, filters: ListSessionsFilters = {}): SessionOverview[] {
@@ -134,6 +147,19 @@ export function listSessions(db: Database, filters: ListSessionsFilters = {}): S
     .all(...params);
 
   return rows.map((row) => hydrateSessionOverview(db, row));
+}
+
+export function listLinkedSessionsForChunk(
+  db: Database,
+  taskId: string,
+  chunkId: string,
+  full = false
+): LinkedSessionDetail[] {
+  return listLinkedSessions(db, "session_chunks.task_id = ? AND session_chunks.chunk_id = ?", [taskId, chunkId], full);
+}
+
+export function listLinkedSessionsForTask(db: Database, taskId: string, full = false): LinkedSessionDetail[] {
+  return listLinkedSessions(db, "session_chunks.task_id = ?", [taskId], full);
 }
 
 export function getLastSession(db: Database, full = false): SessionDetail | null {
@@ -296,6 +322,50 @@ function hydrateSessionOverview(db: Database, row: SessionRecord): SessionOvervi
     summary: getSessionSummary(db, row.id),
     linked_chunks: listSessionChunks(db, row.id)
   };
+}
+
+function listLinkedSessions(
+  db: Database,
+  linkWhereClause: string,
+  params: SQLQueryBindings[],
+  full: boolean
+): LinkedSessionDetail[] {
+  const rows = db
+    .prepare<LinkedSessionRow, SQLQueryBindings[]>(
+      `SELECT
+        sessions.id,
+        sessions.source,
+        sessions.source_session_id,
+        sessions.started_at,
+        sessions.ended_at,
+        sessions.project_path,
+        sessions.repo_remote,
+        sessions.model,
+        sessions.machine,
+        sessions.user_email,
+        sessions.created_at,
+        session_chunks.task_id AS link_task_id,
+        session_chunks.chunk_id AS link_chunk_id,
+        session_chunks.stage AS link_stage,
+        session_chunks.linked_at AS link_linked_at,
+        session_chunks.linked_by AS link_linked_by
+      FROM session_chunks
+      JOIN sessions ON sessions.id = session_chunks.session_id
+      WHERE ${linkWhereClause}
+      ORDER BY session_chunks.stage ASC, sessions.started_at DESC, sessions.id DESC`
+    )
+    .all(...params);
+
+  return rows.map((row) => ({
+    session: hydrateSessionDetail(db, row, full),
+    link: {
+      task_id: row.link_task_id,
+      chunk_id: row.link_chunk_id,
+      stage: row.link_stage,
+      linked_at: row.link_linked_at,
+      linked_by: row.link_linked_by
+    }
+  }));
 }
 
 function hydrateSessionDetail(db: Database, row: SessionRecord, full: boolean): SessionDetail {

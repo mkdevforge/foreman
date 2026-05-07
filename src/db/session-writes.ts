@@ -54,6 +54,21 @@ export function linkSessionChunk(
   );
 }
 
+export function unlinkSessionChunk(
+  db: Database,
+  input: {
+    sessionId: string;
+    taskId: string;
+    chunkId: string;
+  }
+): number {
+  return runSql(
+    db,
+    "DELETE FROM session_chunks WHERE session_id = ? AND task_id = ? AND chunk_id = ?",
+    [input.sessionId, input.taskId, input.chunkId]
+  );
+}
+
 function runSql(db: Database, sql: string, params: SQLQueryBindings[] = []): number {
   const result = db.prepare<unknown, SQLQueryBindings[]>(sql).run(...params) as SqlRunResult;
   return result.changes;

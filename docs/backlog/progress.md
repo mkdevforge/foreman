@@ -30,10 +30,10 @@ This tracker is the single status file for the v0 backlog. Update it whenever a 
 | 3b | [Common ingestion](phase-3b-common-ingestion.md) | Done | Reviewed | Parsed sessions persist idempotently into SQLite. |
 | 3c | [Summary, truncation, and pricing](phase-3c-summary-truncation-pricing.md) | Done | Reviewed | Mocked summaries, truncation, pricing, and opt-in real harness smoke tests work. |
 | 4 | [Hooks and active linkage](phase-4-hooks-active-linkage.md) | Done | Reviewed | Active context, Stop hooks, active linkage, and idempotent hook install work. |
-| 5a | [Review CLI](phase-5a-review-cli.md) | Not started | Reviewed | Review commands join repo YAML with linked session summaries and costs. |
-| 5b | [Catalog listing and one-shot linking](phase-5b-catalog-one-shot.md) | Not started | Reviewed | Unattached sessions can be listed, linked, and unlinked non-interactively. |
-| 5c | [Interactive catalog](phase-5c-interactive-catalog.md) | Not started | Reviewed | Catalog prompt loop supports link, skip, and quit paths. |
-| 5d | [Session cost CLI](phase-5d-session-cost.md) | Not started | Reviewed | Session cost reports group estimates by source, project, task, chunk, model, and day. |
+| 5a | [Review CLI](phase-5a-review-cli.md) | Done | Reviewed | Review commands join repo YAML with linked session summaries and costs. |
+| 5b | [Catalog listing and one-shot linking](phase-5b-catalog-one-shot.md) | Done | Reviewed | Unattached sessions can be listed, linked, and unlinked non-interactively. |
+| 5c | [Interactive catalog](phase-5c-interactive-catalog.md) | Done | Reviewed | Catalog prompt loop supports link, skip, and quit paths. |
+| 5d | [Session cost CLI](phase-5d-session-cost.md) | Done | Reviewed | Session cost reports group estimates by source, project, task, chunk, model, and day. |
 | 6 | [v0 hardening](phase-6-v0-hardening.md) | Not started | Unreviewed | All v0 acceptance criteria pass in automated and manual end-to-end checks. |
 
 ## Post-v0 Backlog Seeds
@@ -76,13 +76,13 @@ Track implementation-blocking decisions here. Close each decision before impleme
 | 4a. v0 task and chunk mutations preserve unknown YAML fields for future dispatch metadata. | Phases 1c, 1b, 6 | Done |
 | 5. Claude Code Stop hook ingests and links an active chunk. | Phases 3a, 3b, 3c, 4, 6 | Done |
 | 6. Codex Stop hook ingests and links an active chunk. | Phases 3a, 3b, 3c, 4, 6 | Done |
-| 7. `foreman review <task>/<chunk>` shows chunk metadata plus linked sessions. | Phase 5a | Not started |
-| 8. `foreman catalog` lists unattached sessions and supports interactive linking. | Phases 5b, 5c | Not started |
-| 9. `foreman session cost --by source` reports a correct source breakdown. | Phase 5d | Not started |
-| 10. All commands have valid `--json` mode. | Phases 0, 1a, 1b, 2b, 5a-5d, 6 | Not started |
+| 7. `foreman review <task>/<chunk>` shows chunk metadata plus linked sessions. | Phase 5a | Done |
+| 8. `foreman catalog` lists unattached sessions and supports interactive linking. | Phases 5b, 5c | Done |
+| 9. `foreman session cost --by source` reports a correct source breakdown. | Phase 5d | Done |
+| 10. All commands have valid `--json` mode. | Phases 0, 1a, 1b, 2b, 5a-5d, 6 | In progress |
 | 11. Re-running hooks does not duplicate stored rows or links. | Phases 3b, 4 | Done |
 | 12. Hooks log failures and exit 0. | Phase 4 | Done |
-| 13. Basic test suite covers parsers, migrations, dedup, soft linkage, catalog flow, and output shape. | Phases 1a, 1b, 2a, 2b, 3a-6 | Not started |
+| 13. Basic test suite covers parsers, migrations, dedup, soft linkage, catalog flow, and output shape. | Phases 1a, 1b, 2a, 2b, 3a-6 | In progress |
 
 ## Maintenance Rules
 

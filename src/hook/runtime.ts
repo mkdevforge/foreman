@@ -11,7 +11,7 @@ import {
   getDefaultForemanHome,
   type ActiveContext
 } from "../store/active";
-import { findRepoRoot, getGitUserEmail } from "../store/repo";
+import { findRepoRoot, getGitOriginRemote, getGitUserEmail } from "../store/repo";
 import { readTask } from "../store/task-store";
 import {
   buildSummaryRequest,
@@ -111,7 +111,7 @@ export async function runForemanHook(name: HookName, argv: string[], io: HookIo,
 
   let parsed: ParsedSession;
   try {
-    parsed = parseStopTranscript(resolution);
+    parsed = withRepoRemoteFallback(parseStopTranscript(resolution));
   } catch (error) {
     appendHookError(options.homeDir, { source, phase: "parse_transcript", error, payload });
     return { exitCode: 0 };
@@ -180,6 +180,21 @@ function parseStopTranscript(resolution: StopPayloadResolution): ParsedSession {
       transcript_path: resolution.transcriptPath
     }
   });
+}
+
+function withRepoRemoteFallback(parsed: ParsedSession): ParsedSession {
+  if (parsed.repo_remote !== null) {
+    return parsed;
+  }
+
+  try {
+    return {
+      ...parsed,
+      repo_remote: getGitOriginRemote(parsed.project_path)
+    };
+  } catch {
+    return parsed;
+  }
 }
 
 function updateDerivedCost(db: Database, parsed: ParsedSession, sessionId: string): void {
