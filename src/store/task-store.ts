@@ -80,6 +80,36 @@ export interface ChunkDecisionMutationResult {
   decision: ChunkDecision;
 }
 
+export type ChunkReadinessIssueCode =
+  | "empty_spec"
+  | "missing_dispatch_metadata"
+  | "dispatch_needs_context"
+  | "dispatch_blocked"
+  | "open_questions"
+  | "missing_required_decision"
+  | "chunk_status_blocked"
+  | "chunk_status_done"
+  | "stage_discovery";
+
+export interface ChunkReadinessIssue {
+  code: ChunkReadinessIssueCode;
+  message: string;
+  questionIds?: string[];
+  status?: string;
+  stage?: string;
+  requiredBy?: string[];
+}
+
+export interface ChunkReadinessReport {
+  taskId: string;
+  chunkId: string;
+  chunk: ForemanChunk;
+  dispatch: ChunkDispatchReadiness | null;
+  ready: boolean;
+  blockers: ChunkReadinessIssue[];
+  warnings: ChunkReadinessIssue[];
+}
+
 const README_BODY = `# Foreman
 
 Repo-scoped Foreman task metadata lives here.
@@ -356,6 +386,98 @@ export function addChunkDecision(repoRoot: string, input: AddChunkDecisionInput)
   }
 
   return { chunk, decision };
+}
+
+export function evaluateChunkReadiness(repoRoot: string, ref: ChunkRef): ChunkReadinessReport {
+  const task = readTask(repoRoot, ref.taskId);
+  const chunk = findChunkOrThrow(task, ref);
+  const dispatch = chunk.dispatch ?? null;
+  const blockers: ChunkReadinessIssue[] = [];
+  const warnings: ChunkReadinessIssue[] = [];
+
+  if (chunk.spec.trim().length === 0) {
+    blockers.push({
+      code: "empty_spec",
+      message: "chunk spec must not be empty"
+    });
+  }
+
+  if (chunk.status === "blocked") {
+    blockers.push({
+      code: "chunk_status_blocked",
+      message: "chunk status is blocked",
+      status: chunk.status
+    });
+  }
+
+  if (chunk.status === "done") {
+    blockers.push({
+      code: "chunk_status_done",
+      message: "chunk is already done",
+      status: chunk.status
+    });
+  }
+
+  if (chunk.stage === "discovery") {
+    blockers.push({
+      code: "stage_discovery",
+      message: "chunk stage is discovery; move it to plan, implement, or review before dispatch",
+      stage: chunk.stage
+    });
+  }
+
+  const openQuestionIds = (chunk.questions ?? [])
+    .filter((question) => question.status === "open")
+    .map((question) => question.id);
+  if (openQuestionIds.length > 0) {
+    blockers.push({
+      code: "open_questions",
+      message: `answer open questions before dispatch: ${openQuestionIds.join(", ")}`,
+      questionIds: openQuestionIds
+    });
+  }
+
+  if (dispatch === null) {
+    blockers.push({
+      code: "missing_dispatch_metadata",
+      message: "add dispatch readiness metadata with status ready"
+    });
+  } else {
+    if (dispatch.status === "needs_context") {
+      blockers.push({
+        code: "dispatch_needs_context",
+        message: "dispatch status is needs_context",
+        status: dispatch.status
+      });
+    }
+
+    if (dispatch.status === "blocked") {
+      blockers.push({
+        code: "dispatch_blocked",
+        message: "dispatch status is blocked",
+        status: dispatch.status
+      });
+    }
+
+    const requiredBy = decisionRequirementReasons(dispatch);
+    if (requiredBy.length > 0 && (chunk.decisions ?? []).length === 0) {
+      blockers.push({
+        code: "missing_required_decision",
+        message: "add at least one accepted decision for this approval or risk policy",
+        requiredBy
+      });
+    }
+  }
+
+  return {
+    taskId: ref.taskId,
+    chunkId: ref.chunkId,
+    chunk,
+    dispatch,
+    ready: blockers.length === 0,
+    blockers,
+    warnings
+  };
 }
 
 function mutateChunk(
@@ -636,6 +758,20 @@ function nextPrefixedUuidId(prefix: "q" | "d", existingIds: string[]): string {
       return id;
     }
   }
+}
+
+function decisionRequirementReasons(dispatch: ChunkDispatchReadiness): string[] {
+  const reasons: string[] = [];
+
+  if (dispatch.approval_required !== "none") {
+    reasons.push(`approval_required:${dispatch.approval_required}`);
+  }
+
+  if (dispatch.risk_level !== "low") {
+    reasons.push(`risk_level:${dispatch.risk_level}`);
+  }
+
+  return reasons;
 }
 
 function validateDispatchReadiness(value: unknown, source: string): ChunkDispatchReadiness {

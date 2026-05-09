@@ -104,6 +104,17 @@ foreman decision list FOREMAN-1/parser
 
 Decision commands support `--json` and expose stable `task_id`, `chunk_id`, `decision`, and `decisions` fields for UI clients. Decisions do not store author identity in repo YAML.
 
+## Readiness Workflow
+
+Readiness reports whether a chunk has enough shared context for future dispatch. The command is read-only and exits `0` for both ready and not-ready evaluations; invalid refs or malformed YAML still exit `2`.
+
+```sh
+foreman chunk ready FOREMAN-1/parser
+foreman chunk ready FOREMAN-1/parser --json
+```
+
+Readiness blockers include empty specs, open questions, missing dispatch metadata, dispatch metadata that is not `ready`, missing accepted decisions when approval/risk policy requires them, blocked/done chunk status, and discovery-stage chunks.
+
 ## Active Work Context
 
 Tell Foreman what task/chunk the next agent session should link to:

@@ -53,6 +53,15 @@ describe("Phase 6a automated acceptance hardening", () => {
       "chunk"
     ]);
     expectJsonCommand(repo, homeDir, ["decision", "list", "FOREMAN-1/api"], ["task_id", "chunk_id", "decisions"]);
+    expectJsonCommand(repo, homeDir, ["chunk", "ready", "FOREMAN-1/api"], [
+      "task_id",
+      "chunk_id",
+      "ready",
+      "blockers",
+      "warnings",
+      "dispatch",
+      "chunk"
+    ]);
     expectJsonCommand(repo, homeDir, ["task", "list"], ["tasks"]);
     expectJsonCommand(repo, homeDir, ["task", "show", "FOREMAN-1"], ["task"]);
     expectJsonCommand(repo, homeDir, ["chunk", "list", "FOREMAN-1"], ["task_id", "chunks"]);

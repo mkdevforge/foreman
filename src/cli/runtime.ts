@@ -39,6 +39,7 @@ import {
   addTask,
   answerChunkQuestion,
   appendChunkNote,
+  evaluateChunkReadiness,
   initializeForemanRepo,
   listChunkDecisions,
   listChunkQuestions,
@@ -53,12 +54,14 @@ import {
   assertValidChunkStage,
   parseChunkRef,
   type ChunkDecision,
+  type ChunkDispatchReadiness,
   type ChunkNote,
   type ChunkQuestion,
   type ChunkStage,
   type ForemanChunk,
   type ForemanTask
 } from "../store/schema";
+import type { ChunkReadinessIssue, ChunkReadinessReport } from "../store/task-store";
 import { installForemanHooks, parseInstallTool } from "../hook/install";
 
 export type WriteFn = (text: string) => void;
@@ -411,6 +414,17 @@ function createChunkCommand(json: boolean, io: CliIo): Command {
         chunk: toJsonChunk(updatedChunk),
         note: note === undefined ? null : toJsonNote(note)
       });
+    });
+
+  configureCommand(chunk.command("ready"), io)
+    .description("Evaluate whether a chunk is ready for future dispatch.")
+    .argument("<task>/<chunk>")
+    .action((ref: string) => {
+      const repoRoot = findRepoRoot();
+      const chunkRef = parseChunkRef(ref);
+      const readiness = evaluateChunkReadiness(repoRoot, chunkRef);
+
+      writeData(json, io, renderChunkReadiness(readiness), toJsonChunkReadiness(readiness));
     });
 
   return chunk;
@@ -1362,6 +1376,39 @@ function toJsonTaskReview(review: TaskReview) {
   };
 }
 
+function toJsonChunkReadiness(readiness: ChunkReadinessReport) {
+  return {
+    task_id: readiness.taskId,
+    chunk_id: readiness.chunkId,
+    ready: readiness.ready,
+    blockers: readiness.blockers.map(toJsonReadinessIssue),
+    warnings: readiness.warnings.map(toJsonReadinessIssue),
+    dispatch: readiness.dispatch === null ? null : toJsonDispatchReadiness(readiness.dispatch),
+    chunk: toJsonChunk(readiness.chunk)
+  };
+}
+
+function toJsonReadinessIssue(issue: ChunkReadinessIssue) {
+  return {
+    code: issue.code,
+    message: issue.message,
+    ...(issue.questionIds === undefined ? {} : { question_ids: issue.questionIds }),
+    ...(issue.status === undefined ? {} : { status: issue.status }),
+    ...(issue.stage === undefined ? {} : { stage: issue.stage }),
+    ...(issue.requiredBy === undefined ? {} : { required_by: issue.requiredBy })
+  };
+}
+
+function toJsonDispatchReadiness(dispatch: ChunkDispatchReadiness) {
+  return {
+    status: dispatch.status,
+    risk_level: dispatch.risk_level,
+    approval_required: dispatch.approval_required,
+    allowed_actions: dispatch.allowed_actions,
+    blocked_actions: dispatch.blocked_actions
+  };
+}
+
 function toJsonLinkedSession(entry: LinkedSessionDetail) {
   return {
     link: toJsonSessionChunkLink(entry.link),
@@ -1642,6 +1689,21 @@ function renderDecisionList(decisions: ChunkDecision[]): string {
   return `${decisions.map(formatDecisionSummary).join("\n")}\n`;
 }
 
+function renderChunkReadiness(readiness: ChunkReadinessReport): string {
+  const lines = [
+    `Chunk ${readiness.taskId}/${readiness.chunkId} is ${readiness.ready ? "ready" : "not ready"} for dispatch.`,
+    `Status: ${readiness.chunk.status}`,
+    `Stage: ${readiness.chunk.stage}`,
+    `Dispatch: ${formatDispatchReadiness(readiness.dispatch)}`,
+    "Blockers:",
+    ...renderReadinessIssues(readiness.blockers),
+    "Warnings:",
+    ...renderReadinessIssues(readiness.warnings)
+  ];
+
+  return `${lines.join("\n")}\n`;
+}
+
 function renderSessionList(sessions: SessionOverview[]): string {
   if (sessions.length === 0) {
     return "No sessions found.\n";
@@ -1815,6 +1877,32 @@ function formatQuestionSummary(question: ChunkQuestion): string {
 
 function formatDecisionSummary(decision: ChunkDecision): string {
   return `${decision.id}  ${decision.decided_at}  ${decision.body}`;
+}
+
+function formatDispatchReadiness(dispatch: ChunkDispatchReadiness | null): string {
+  if (dispatch === null) {
+    return "missing";
+  }
+
+  return [
+    dispatch.status,
+    `risk=${dispatch.risk_level}`,
+    `approval=${dispatch.approval_required}`,
+    `allowed=${formatInlineList(dispatch.allowed_actions)}`,
+    `blocked=${formatInlineList(dispatch.blocked_actions)}`
+  ].join(" ");
+}
+
+function renderReadinessIssues(issues: ChunkReadinessIssue[]): string[] {
+  if (issues.length === 0) {
+    return ["  none"];
+  }
+
+  return issues.map((issue) => `  ${issue.code}: ${issue.message}`);
+}
+
+function formatInlineList(values: string[]): string {
+  return values.length === 0 ? "none" : values.join(",");
 }
 
 function formatSessionListRow(session: SessionOverview): string {

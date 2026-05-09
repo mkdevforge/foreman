@@ -6,7 +6,7 @@ description: Dogfood Foreman in this repository while implementing the first pos
   human-gate slices.
 status: doing
 created_at: 2026-05-07T17:37:17.715Z
-updated_at: 2026-05-09T01:06:12.937Z
+updated_at: 2026-05-09T07:57:08.844Z
 chunks:
   - id: phase7a-readiness
     title: Backlog and readiness schema
@@ -130,10 +130,10 @@ chunks:
 
       - Tests cover add/list, invalid references, preservation across chunk mutations, and JSON
       output.
-    status: review
+    status: done
     stage: review
     created_at: 2026-05-07T18:22:49.000Z
-    updated_at: 2026-05-09T01:06:12.937Z
+    updated_at: 2026-05-09T07:51:07.995Z
     notes:
       - ts: 2026-05-07T19:41:16.739Z
         body: Started after question commands landed. Decision CLI will mirror the UI-oriented JSON stance
@@ -189,11 +189,24 @@ chunks:
       - The readiness result becomes the gate before any later dispatch runner work.
 
       - Tests cover ready, not-ready, malformed metadata, and JSON output.
-    status: todo
-    stage: discovery
+    status: review
+    stage: review
     created_at: 2026-05-07T18:22:49.000Z
-    updated_at: 2026-05-07T18:22:49.000Z
-    notes: []
+    updated_at: 2026-05-09T07:57:08.844Z
+    notes:
+      - ts: 2026-05-09T07:57:00.820Z
+        body: Implemented read-only chunk readiness evaluation with structured blockers, JSON output, docs,
+          tests, and dogfooded dispatch readiness metadata. Verified build, focused tests, full
+          suite, and foreman chunk ready on this chunk.
+    dispatch:
+      status: ready
+      risk_level: low
+      approval_required: none
+      allowed_actions:
+        - edit_source
+        - run_tests
+      blocked_actions:
+        - launch_runner
   - id: dispatch-run-model
     title: Dispatch run model
     spec: >

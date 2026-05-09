@@ -78,3 +78,17 @@ Allowed `approval_required` values:
 - `review`
 
 `allowed_actions` and `blocked_actions` are lists of non-empty action labels. Future runner state and run attempts should not be stored here.
+
+## Readiness Evaluation
+
+`foreman chunk ready <task>/<chunk>` is a read-only evaluator for this metadata. It exits `0` for valid evaluations, including chunks that are not ready, and reports `ready: false` with actionable blockers in JSON. Missing task/chunk refs and malformed YAML remain CLI errors.
+
+Current blockers:
+
+- Empty chunk spec.
+- Missing `dispatch` metadata.
+- `dispatch.status` of `needs_context` or `blocked`.
+- Open chunk questions.
+- No accepted decisions when `approval_required` is not `none` or `risk_level` is not `low`.
+- Chunk status `blocked` or `done`.
+- Chunk stage `discovery`.
