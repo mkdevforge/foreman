@@ -10,7 +10,10 @@ const foremanBin = join(repoRoot, "foreman");
 const decoder = new TextDecoder();
 const tempDirs: string[] = [];
 const isoUtcPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+const decisionIdPattern = /^d_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const oldTimestamp = "2026-01-01T00:00:00.000Z";
+const existingDecisionId1 = "d_019f0000-0000-7000-8000-000000000001";
+const existingDecisionId3 = "d_019f0000-0000-7000-8000-000000000003";
 
 function createTempDir(): string {
   const dir = mkdtempSync(join(tmpdir(), "foreman-phase7c-test-"));
@@ -94,7 +97,7 @@ afterEach(() => {
 });
 
 describe("Phase 7c decision CLI", () => {
-  test("adds and lists chunk decisions with stable d-number ids", () => {
+  test("adds and lists chunk decisions with prefixed UUIDv7 ids", () => {
     const repo = setupRepo();
 
     forceOldTimestamps(repo);
@@ -103,25 +106,30 @@ describe("Phase 7c decision CLI", () => {
     const list = runForeman(repo, ["decision", "list", "FOREMAN-7/decisions"]);
     const task = readTaskYaml(repo);
     const decisions = task.chunks[0].decisions;
+    const firstId = decisions[0].id;
+    const secondId = decisions[1].id;
 
     expect(first.exitCode).toBe(0);
-    expect(first.stdout).toBe("Added decision d1 to FOREMAN-7/decisions\n");
+    expect(first.stdout).toBe(`Added decision ${firstId} to FOREMAN-7/decisions\n`);
     expect(second.exitCode).toBe(0);
-    expect(second.stdout).toBe("Added decision d2 to FOREMAN-7/decisions\n");
+    expect(second.stdout).toBe(`Added decision ${secondId} to FOREMAN-7/decisions\n`);
+    expect(firstId).toMatch(decisionIdPattern);
+    expect(secondId).toMatch(decisionIdPattern);
+    expect(secondId).not.toBe(firstId);
     expect(list.exitCode).toBe(0);
-    expect(list.stdout).toContain("d1  ");
+    expect(list.stdout).toContain(`${firstId}  `);
     expect(list.stdout).toContain("Use CLI JSON as the UI boundary.");
-    expect(list.stdout).toContain("d2  ");
+    expect(list.stdout).toContain(`${secondId}  `);
     expect(list.stdout).toContain("Keep decisions append-only for now.");
     expect(decisions).toHaveLength(2);
     expect(decisions[0]).toMatchObject({
-      id: "d1",
+      id: firstId,
       body: "Use CLI JSON as the UI boundary."
     });
     expect(decisions[0].decided_at).toMatch(isoUtcPattern);
     expect(decisions[0].author).toBeUndefined();
     expect(decisions[1]).toMatchObject({
-      id: "d2",
+      id: secondId,
       body: "Keep decisions append-only for now."
     });
     expect(decisions[1].decided_at).toMatch(isoUtcPattern);
@@ -143,10 +151,10 @@ describe("Phase 7c decision CLI", () => {
       task_id: "FOREMAN-7",
       chunk_id: "decisions",
       decision: {
-        id: "d1",
         body: "Use explicit decision JSON."
       }
     });
+    expect(added.decision.id).toMatch(decisionIdPattern);
     expect(added.decision.decided_at).toMatch(isoUtcPattern);
     expect(added.decision.author).toBeUndefined();
     expect(added.chunk).not.toHaveProperty("decisions");
@@ -176,7 +184,7 @@ describe("Phase 7c decision CLI", () => {
     task.chunks[0].custom_chunk_field = "preserved";
     task.chunks[0].decisions = [
       {
-        id: "d1",
+        id: existingDecisionId1,
         body: "Existing decision.",
         decided_at: "2026-05-07T18:00:00.000Z",
         source: "ui"
@@ -189,21 +197,23 @@ describe("Phase 7c decision CLI", () => {
 
     expect(after.chunks[0].custom_chunk_field).toBe("preserved");
     expect(after.chunks[0].decisions[0].source).toBe("ui");
-    expect(after.chunks[0].decisions.map((decision: any) => decision.id)).toEqual(["d1", "d2"]);
+    expect(after.chunks[0].decisions.map((decision: any) => decision.id)[0]).toBe(existingDecisionId1);
+    expect(after.chunks[0].decisions.map((decision: any) => decision.id)[1]).toMatch(decisionIdPattern);
+    expect(after.chunks[0].decisions.map((decision: any) => decision.id)[1]).not.toBe(existingDecisionId1);
   });
 
-  test("generates the next monotonic id from existing d-number decisions", () => {
+  test("generates a new prefixed UUIDv7 id without reusing existing ids", () => {
     const repo = setupRepo();
     const task = readTaskYaml(repo);
 
     task.chunks[0].decisions = [
       {
-        id: "d1",
+        id: existingDecisionId1,
         body: "Existing first decision.",
         decided_at: "2026-05-07T18:00:00.000Z"
       },
       {
-        id: "d3",
+        id: existingDecisionId3,
         body: "Existing third decision.",
         decided_at: "2026-05-07T18:02:00.000Z"
       }
@@ -211,10 +221,16 @@ describe("Phase 7c decision CLI", () => {
     writeTaskYaml(repo, task);
 
     const result = runForeman(repo, ["decision", "add", "FOREMAN-7/decisions", "New decision."]);
+    const ids = readTaskYaml(repo).chunks[0].decisions.map((decision: any) => decision.id);
 
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toBe("Added decision d4 to FOREMAN-7/decisions\n");
-    expect(readTaskYaml(repo).chunks[0].decisions.map((decision: any) => decision.id)).toEqual(["d1", "d3", "d4"]);
+    expect(ids).toHaveLength(3);
+    expect(ids[0]).toBe(existingDecisionId1);
+    expect(ids[1]).toBe(existingDecisionId3);
+    expect(ids[2]).toMatch(decisionIdPattern);
+    expect(ids[2]).not.toBe(existingDecisionId1);
+    expect(ids[2]).not.toBe(existingDecisionId3);
+    expect(result.stdout).toBe(`Added decision ${ids[2]} to FOREMAN-7/decisions\n`);
   });
 
   test("fails clearly for bad references, invalid ids, duplicate ids, and empty bodies", () => {
@@ -231,7 +247,7 @@ describe("Phase 7c decision CLI", () => {
     const task = readTaskYaml(repo);
     task.chunks[0].decisions = [
       {
-        id: "d0",
+        id: "d1",
         body: "Invalid id.",
         decided_at: "2026-05-07T18:00:00.000Z"
       }
@@ -240,16 +256,16 @@ describe("Phase 7c decision CLI", () => {
 
     const invalidId = runForeman(repo, ["decision", "list", "FOREMAN-7/decisions"]);
     expect(invalidId.exitCode).toBe(2);
-    expect(invalidId.stderr).toContain("invalid decision id 'd0'");
+    expect(invalidId.stderr).toContain("invalid decision id 'd1'");
 
     task.chunks[0].decisions = [
       {
-        id: "d1",
+        id: existingDecisionId1,
         body: "First.",
         decided_at: "2026-05-07T18:00:00.000Z"
       },
       {
-        id: "d1",
+        id: existingDecisionId1,
         body: "Duplicate.",
         decided_at: "2026-05-07T18:01:00.000Z"
       }
@@ -258,6 +274,6 @@ describe("Phase 7c decision CLI", () => {
 
     const duplicateIds = runForeman(repo, ["decision", "list", "FOREMAN-7/decisions"]);
     expect(duplicateIds.exitCode).toBe(2);
-    expect(duplicateIds.stderr).toContain("duplicate decisions id 'd1'");
+    expect(duplicateIds.stderr).toContain(`duplicate decisions id '${existingDecisionId1}'`);
   });
 });

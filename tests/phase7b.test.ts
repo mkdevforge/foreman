@@ -10,7 +10,10 @@ const foremanBin = join(repoRoot, "foreman");
 const decoder = new TextDecoder();
 const tempDirs: string[] = [];
 const isoUtcPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+const questionIdPattern = /^q_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const oldTimestamp = "2026-01-01T00:00:00.000Z";
+const existingQuestionId1 = "q_019f0000-0000-7000-8000-000000000001";
+const existingQuestionId3 = "q_019f0000-0000-7000-8000-000000000003";
 
 function createTempDir(): string {
   const dir = mkdtempSync(join(tmpdir(), "foreman-phase7b-test-"));
@@ -94,35 +97,41 @@ afterEach(() => {
 });
 
 describe("Phase 7b question CLI", () => {
-  test("adds, lists, and answers chunk questions with stable q-number ids", () => {
+  test("adds, lists, and answers chunk questions with prefixed UUIDv7 ids", () => {
     const repo = setupRepo();
 
     forceOldTimestamps(repo);
     const first = runForeman(repo, ["question", "add", "FOREMAN-7/questions", "Which UI flow owns this?"]);
     const second = runForeman(repo, ["question", "add", "FOREMAN-7/questions", "What should happen next?"]);
+    const afterAdds = readTaskYaml(repo);
+    const firstId = afterAdds.chunks[0].questions[0].id;
+    const secondId = afterAdds.chunks[0].questions[1].id;
     const list = runForeman(repo, ["question", "list", "FOREMAN-7/questions"]);
     const answer = runForeman(repo, [
       "question",
       "answer",
       "FOREMAN-7/questions",
-      "q1",
+      firstId,
       "The future UI should call this CLI JSON surface."
     ]);
     const task = readTaskYaml(repo);
     const questions = task.chunks[0].questions;
 
     expect(first.exitCode).toBe(0);
-    expect(first.stdout).toBe("Added question q1 to FOREMAN-7/questions\n");
+    expect(first.stdout).toBe(`Added question ${firstId} to FOREMAN-7/questions\n`);
     expect(second.exitCode).toBe(0);
-    expect(second.stdout).toBe("Added question q2 to FOREMAN-7/questions\n");
+    expect(second.stdout).toBe(`Added question ${secondId} to FOREMAN-7/questions\n`);
+    expect(firstId).toMatch(questionIdPattern);
+    expect(secondId).toMatch(questionIdPattern);
+    expect(secondId).not.toBe(firstId);
     expect(list.stdout).toBe(
-      "q1  open  Which UI flow owns this?\nq2  open  What should happen next?\n"
+      `${firstId}  open  Which UI flow owns this?\n${secondId}  open  What should happen next?\n`
     );
     expect(answer.exitCode).toBe(0);
-    expect(answer.stdout).toBe("Answered question q1 for FOREMAN-7/questions\n");
+    expect(answer.stdout).toBe(`Answered question ${firstId} for FOREMAN-7/questions\n`);
     expect(questions).toHaveLength(2);
     expect(questions[0]).toMatchObject({
-      id: "q1",
+      id: firstId,
       status: "answered",
       body: "Which UI flow owns this?",
       answer: "The future UI should call this CLI JSON surface."
@@ -130,7 +139,7 @@ describe("Phase 7b question CLI", () => {
     expect(questions[0].asked_at).toMatch(isoUtcPattern);
     expect(questions[0].answered_at).toMatch(isoUtcPattern);
     expect(questions[1]).toMatchObject({
-      id: "q2",
+      id: secondId,
       status: "open",
       body: "What should happen next?",
       answered_at: null,
@@ -152,7 +161,7 @@ describe("Phase 7b question CLI", () => {
         "question",
         "answer",
         "FOREMAN-7/questions",
-        "q1",
+        added.question.id,
         "foreman question",
         "--json"
       ]).stdout
@@ -163,18 +172,18 @@ describe("Phase 7b question CLI", () => {
       task_id: "FOREMAN-7",
       chunk_id: "questions",
       question: {
-        id: "q1",
         status: "open",
         body: "Which command owns questions?",
         answered_at: null,
         answer: null
       }
     });
+    expect(added.question.id).toMatch(questionIdPattern);
     expect(added.question.asked_at).toMatch(isoUtcPattern);
     expect(added.chunk).not.toHaveProperty("questions");
     expect(listed.questions).toEqual([added.question]);
     expect(answered.question).toMatchObject({
-      id: "q1",
+      id: added.question.id,
       status: "answered",
       body: "Which command owns questions?",
       answer: "foreman question"
@@ -201,7 +210,7 @@ describe("Phase 7b question CLI", () => {
     task.chunks[0].custom_chunk_field = "preserved";
     task.chunks[0].questions = [
       {
-        id: "q1",
+        id: existingQuestionId1,
         status: "open",
         body: "Should custom metadata survive?",
         asked_at: "2026-05-07T18:00:00.000Z",
@@ -212,7 +221,7 @@ describe("Phase 7b question CLI", () => {
     ];
     writeTaskYaml(repo, task);
 
-    expect(runForeman(repo, ["question", "answer", "FOREMAN-7/questions", "q1", "Yes."]).exitCode).toBe(0);
+    expect(runForeman(repo, ["question", "answer", "FOREMAN-7/questions", existingQuestionId1, "Yes."]).exitCode).toBe(0);
     const after = readTaskYaml(repo);
 
     expect(after.chunks[0].custom_chunk_field).toBe("preserved");
@@ -220,13 +229,13 @@ describe("Phase 7b question CLI", () => {
     expect(after.chunks[0].questions[0].answer).toBe("Yes.");
   });
 
-  test("generates the next monotonic id from existing q-number questions", () => {
+  test("generates a new prefixed UUIDv7 id without reusing existing ids", () => {
     const repo = setupRepo();
     const task = readTaskYaml(repo);
 
     task.chunks[0].questions = [
       {
-        id: "q1",
+        id: existingQuestionId1,
         status: "answered",
         body: "Existing first question.",
         asked_at: "2026-05-07T18:00:00.000Z",
@@ -234,7 +243,7 @@ describe("Phase 7b question CLI", () => {
         answer: "Done."
       },
       {
-        id: "q3",
+        id: existingQuestionId3,
         status: "open",
         body: "Existing third question.",
         asked_at: "2026-05-07T18:02:00.000Z",
@@ -245,25 +254,32 @@ describe("Phase 7b question CLI", () => {
     writeTaskYaml(repo, task);
 
     const result = runForeman(repo, ["question", "add", "FOREMAN-7/questions", "New question."]);
+    const ids = readTaskYaml(repo).chunks[0].questions.map((question: any) => question.id);
 
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toBe("Added question q4 to FOREMAN-7/questions\n");
-    expect(readTaskYaml(repo).chunks[0].questions.map((question: any) => question.id)).toEqual(["q1", "q3", "q4"]);
+    expect(ids).toHaveLength(3);
+    expect(ids[0]).toBe(existingQuestionId1);
+    expect(ids[1]).toBe(existingQuestionId3);
+    expect(ids[2]).toMatch(questionIdPattern);
+    expect(ids[2]).not.toBe(existingQuestionId1);
+    expect(ids[2]).not.toBe(existingQuestionId3);
+    expect(result.stdout).toBe(`Added question ${ids[2]} to FOREMAN-7/questions\n`);
   });
 
   test("fails clearly for bad references, bad ids, duplicate ids, and answered questions", () => {
     const repo = setupRepo();
 
     expect(runForeman(repo, ["question", "add", "FOREMAN-7/questions", "Question?"]).exitCode).toBe(0);
-    expect(runForeman(repo, ["question", "answer", "FOREMAN-7/questions", "q1", "Answer."]).exitCode).toBe(0);
+    const questionId = readTaskYaml(repo).chunks[0].questions[0].id;
+    expect(runForeman(repo, ["question", "answer", "FOREMAN-7/questions", questionId, "Answer."]).exitCode).toBe(0);
 
     const missingChunk = runForeman(repo, ["question", "list", "FOREMAN-7/missing"]);
-    const invalidQuestionId = runForeman(repo, ["question", "answer", "FOREMAN-7/questions", "q0", "Answer."]);
+    const invalidQuestionId = runForeman(repo, ["question", "answer", "FOREMAN-7/questions", "q1", "Answer."]);
     const alreadyAnswered = runForeman(repo, [
       "question",
       "answer",
       "FOREMAN-7/questions",
-      "q1",
+      questionId,
       "New answer."
     ]);
     const emptyBody = runForeman(repo, ["question", "add", "FOREMAN-7/questions", "   "]);
@@ -271,15 +287,15 @@ describe("Phase 7b question CLI", () => {
     expect(missingChunk.exitCode).toBe(2);
     expect(missingChunk.stderr).toContain("chunk 'FOREMAN-7/missing' was not found");
     expect(invalidQuestionId.exitCode).toBe(2);
-    expect(invalidQuestionId.stderr).toContain("invalid question id 'q0'");
+    expect(invalidQuestionId.stderr).toContain("invalid question id 'q1'");
     expect(alreadyAnswered.exitCode).toBe(2);
-    expect(alreadyAnswered.stderr).toContain("question 'FOREMAN-7/questions#q1' is already answered");
+    expect(alreadyAnswered.stderr).toContain(`question 'FOREMAN-7/questions#${questionId}' is already answered`);
     expect(emptyBody.exitCode).toBe(2);
     expect(emptyBody.stderr).toContain("question body must not be empty");
 
     const task = readTaskYaml(repo);
     task.chunks[0].questions.push({
-      id: "q1",
+      id: questionId,
       status: "open",
       body: "Duplicate.",
       asked_at: "2026-05-07T18:03:00.000Z",
@@ -290,6 +306,6 @@ describe("Phase 7b question CLI", () => {
 
     const duplicateIds = runForeman(repo, ["question", "list", "FOREMAN-7/questions"]);
     expect(duplicateIds.exitCode).toBe(2);
-    expect(duplicateIds.stderr).toContain("duplicate questions id 'q1'");
+    expect(duplicateIds.stderr).toContain(`duplicate questions id '${questionId}'`);
   });
 });

@@ -83,19 +83,19 @@ Task YAML is intended to be committed with the repo. v0 validates known fields b
 
 ## Question Workflow
 
-Questions capture missing context as explicit chunk state. IDs are generated per chunk as `q1`, `q2`, and so on.
+Questions capture missing context as explicit chunk state. IDs are generated as prefixed UUIDv7 values such as `q_019e0a43-440d-71ab-8a12-d96835bd56f1`.
 
 ```sh
 foreman question add FOREMAN-1/parser "Which auth boundary owns token refresh?"
 foreman question list FOREMAN-1/parser
-foreman question answer FOREMAN-1/parser q1 "Keep refresh handling in the API boundary."
+foreman question answer FOREMAN-1/parser q_019e0a43-440d-71ab-8a12-d96835bd56f1 "Keep refresh handling in the API boundary."
 ```
 
 Question commands support `--json` and expose stable `task_id`, `chunk_id`, `question`, and `questions` fields for UI clients.
 
 ## Decision Workflow
 
-Decisions capture accepted human choices as durable chunk context. IDs are generated per chunk as `d1`, `d2`, and so on.
+Decisions capture accepted human choices as durable chunk context. IDs are generated as prefixed UUIDv7 values such as `d_019e0a43-440f-729e-8631-8cffb5344450`.
 
 ```sh
 foreman decision add FOREMAN-1/parser "Keep refresh handling in the API boundary."

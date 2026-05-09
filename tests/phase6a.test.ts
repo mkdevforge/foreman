@@ -33,14 +33,14 @@ describe("Phase 6a automated acceptance hardening", () => {
       "chunk",
       "note"
     ]);
-    expectJsonCommand(repo, homeDir, ["question", "add", "FOREMAN-1/api", "Which boundary owns this?"], [
+    const questionAdd = expectJsonCommand(repo, homeDir, ["question", "add", "FOREMAN-1/api", "Which boundary owns this?"], [
       "task_id",
       "chunk_id",
       "question",
       "chunk"
     ]);
     expectJsonCommand(repo, homeDir, ["question", "list", "FOREMAN-1/api"], ["task_id", "chunk_id", "questions"]);
-    expectJsonCommand(repo, homeDir, ["question", "answer", "FOREMAN-1/api", "q1", "The API boundary."], [
+    expectJsonCommand(repo, homeDir, ["question", "answer", "FOREMAN-1/api", questionAdd.question.id, "The API boundary."], [
       "task_id",
       "chunk_id",
       "question",

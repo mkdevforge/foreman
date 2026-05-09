@@ -9,6 +9,8 @@ const repoRoot = fileURLToPath(new URL("../", import.meta.url));
 const foremanBin = join(repoRoot, "foreman");
 const decoder = new TextDecoder();
 const tempDirs: string[] = [];
+const questionId = "q_019f0000-0000-7000-8000-000000000001";
+const decisionId = "d_019f0000-0000-7000-8000-000000000001";
 
 function createTempDir(): string {
   const dir = mkdtempSync(join(tmpdir(), "foreman-test-"));
@@ -89,7 +91,7 @@ function addFutureMetadata(repo: string): void {
   };
   task.chunks[0].questions = [
     {
-      id: "q1",
+      id: questionId,
       status: "open",
       body: "Which auth boundary owns token refresh?",
       asked_at: "2026-05-06T00:00:00.000Z",
@@ -99,7 +101,7 @@ function addFutureMetadata(repo: string): void {
   ];
   task.chunks[0].decisions = [
     {
-      id: "d1",
+      id: decisionId,
       body: "Keep refresh handling in the API boundary.",
       decided_at: "2026-05-06T00:00:00.000Z"
     }
@@ -144,8 +146,8 @@ describe("foreman YAML extensibility guardrail", () => {
     expect(result.exitCode).toBe(0);
     expect(task.chunks).toHaveLength(2);
     expect(task.dispatch.status).toBe("ready");
-    expect(task.chunks[0].questions[0].id).toBe("q1");
-    expect(task.chunks[0].decisions[0].id).toBe("d1");
+    expect(task.chunks[0].questions[0].id).toBe(questionId);
+    expect(task.chunks[0].decisions[0].id).toBe(decisionId);
     expect(task.chunks[0].run_attempts[0].id).toBe("attempt-1");
     expect(task.chunks[1]).not.toHaveProperty("questions");
     expect(task.chunks[1]).not.toHaveProperty("dispatch");
@@ -191,7 +193,7 @@ describe("foreman YAML extensibility guardrail", () => {
     expect(chunkStatus.chunk).not.toHaveProperty("questions");
     expect(chunkStatus.chunk).not.toHaveProperty("decisions");
     expect(chunkStatus.chunk).not.toHaveProperty("run_attempts");
-    expect(readTaskYaml(repo).chunks[0].questions[0].id).toBe("q1");
+    expect(readTaskYaml(repo).chunks[0].questions[0].id).toBe(questionId);
   });
 
   test("invalid known fields still fail validation when unknown fields are present", () => {
@@ -219,8 +221,8 @@ describe("foreman YAML extensibility guardrail", () => {
     expect(task.risk_level).toBe("medium");
     expect(task.approval_required).toBe("plan");
     expect(task.dispatch.attempts[0].id).toBe("run-1");
-    expect(task.chunks[0].questions[0].id).toBe("q1");
-    expect(task.chunks[0].decisions[0].id).toBe("d1");
+    expect(task.chunks[0].questions[0].id).toBe(questionId);
+    expect(task.chunks[0].decisions[0].id).toBe(decisionId);
     expect(task.chunks[0].run_attempts[0].id).toBe("attempt-1");
   });
 });

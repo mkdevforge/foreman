@@ -6,7 +6,7 @@ description: Dogfood Foreman in this repository while implementing the first pos
   human-gate slices.
 status: doing
 created_at: 2026-05-07T17:37:17.715Z
-updated_at: 2026-05-07T19:45:49.944Z
+updated_at: 2026-05-09T01:06:12.937Z
 chunks:
   - id: phase7a-readiness
     title: Backlog and readiness schema
@@ -92,11 +92,11 @@ chunks:
         body: Started after Phase 7a schema landed. Bare foreman is now available through bun link for real
           local dogfooding.
       - ts: 2026-05-07T19:26:55.782Z
-        body: Implemented question add/list/answer commands with q-number IDs, UI-oriented JSON output,
-          validation for bad IDs and duplicate question IDs, and docs updates. Verified with build,
-          focused tests, full suite, and dogfooding q1 on this chunk.
+        body: Implemented question add/list/answer commands with initial counter IDs, UI-oriented JSON
+          output, validation for bad IDs and duplicate question IDs, and docs updates. Verified with
+          build, focused tests, full suite, and dogfooding the first question on this chunk.
     questions:
-      - id: q1
+      - id: q_019e0a43-440d-71ab-8a12-d96835bd56f1
         status: answered
         body: Should question commands expose stable JSON fields for future UI clients?
         asked_at: 2026-05-07T19:26:30.050Z
@@ -133,20 +133,37 @@ chunks:
     status: review
     stage: review
     created_at: 2026-05-07T18:22:49.000Z
-    updated_at: 2026-05-07T19:45:49.944Z
+    updated_at: 2026-05-09T01:06:12.937Z
     notes:
       - ts: 2026-05-07T19:41:16.739Z
         body: Started after question commands landed. Decision CLI will mirror the UI-oriented JSON stance
-          with append-only d-number IDs and no repo-visible author identity.
+          with append-only IDs and no repo-visible author identity.
       - ts: 2026-05-07T19:45:49.944Z
-        body: Implemented decision add/list commands with d-number IDs, append-only semantics, UI-oriented
-          JSON output, validation for bad and duplicate decision IDs, and docs updates. Verified
-          with build, focused tests, full suite, and dogfooding d1 on this chunk.
+        body: Implemented decision add/list commands with initial counter IDs, append-only semantics,
+          UI-oriented JSON output, validation for bad and duplicate decision IDs, and docs updates.
+          Verified with build, focused tests, full suite, and dogfooding the first decision on this
+          chunk.
+      - ts: 2026-05-09T01:06:12.937Z
+        body: Corrected question and decision IDs from per-chunk counters to prefixed UUIDv7 values after
+          reviewing branch-merge collision risk. Verified build, focused tests, full suite, and
+          dogfooded new UUID IDs through question add/answer and decision add.
     decisions:
-      - id: d1
+      - id: d_019e0a43-440f-729e-8631-8cffb5344450
         body: Decision commands are append-only in this slice; edit/delete behavior can wait until a
           concrete workflow needs it.
         decided_at: 2026-05-07T19:45:32.230Z
+      - id: d_019e0a45-30ed-7583-b686-3749e7b9a0ea
+        body: Question and decision IDs use prefixed UUIDv7 values in repo YAML to avoid branch-merge ID
+          collisions.
+        decided_at: 2026-05-09T01:06:07.213Z
+    questions:
+      - id: q_019e0a44-fc35-7651-a0ea-abceecb18c7e
+        status: answered
+        body: Should question and decision IDs use per-chunk counters?
+        asked_at: 2026-05-09T01:05:53.717Z
+        answered_at: 2026-05-09T01:06:01.557Z
+        answer: No. Use prefixed UUIDv7 IDs so independent branches do not generate the same repo-visible
+          question or decision IDs.
   - id: readiness-cli
     title: Readiness validation
     spec: >

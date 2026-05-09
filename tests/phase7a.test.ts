@@ -9,6 +9,9 @@ const repoRoot = fileURLToPath(new URL("../", import.meta.url));
 const foremanBin = join(repoRoot, "foreman");
 const decoder = new TextDecoder();
 const tempDirs: string[] = [];
+const questionId1 = "q_019f0000-0000-7000-8000-000000000001";
+const questionId2 = "q_019f0000-0000-7000-8000-000000000002";
+const decisionId1 = "d_019f0000-0000-7000-8000-000000000001";
 
 function createTempDir(): string {
   const dir = mkdtempSync(join(tmpdir(), "foreman-phase7a-test-"));
@@ -83,7 +86,7 @@ function addDispatchReadinessMetadata(repo: string): void {
 
   chunk.questions = [
     {
-      id: "q1",
+      id: questionId1,
       status: "open",
       body: "Which approval policy should this chunk use?",
       asked_at: "2026-05-07T18:00:00.000Z",
@@ -91,7 +94,7 @@ function addDispatchReadinessMetadata(repo: string): void {
       answer: null
     },
     {
-      id: "q2",
+      id: questionId2,
       status: "answered",
       body: "Can this chunk alter runner behavior?",
       asked_at: "2026-05-07T18:01:00.000Z",
@@ -101,7 +104,7 @@ function addDispatchReadinessMetadata(repo: string): void {
   ];
   chunk.decisions = [
     {
-      id: "d1",
+      id: decisionId1,
       body: "Keep committed metadata separate from local execution state.",
       decided_at: "2026-05-07T18:03:00.000Z"
     }
@@ -135,7 +138,7 @@ describe("Phase 7a dispatch readiness YAML schema", () => {
 
     expect(task.chunks[0].questions).toEqual([
       {
-        id: "q1",
+        id: questionId1,
         status: "open",
         body: "Which approval policy should this chunk use?",
         asked_at: "2026-05-07T18:00:00.000Z",
@@ -143,7 +146,7 @@ describe("Phase 7a dispatch readiness YAML schema", () => {
         answer: null
       },
       {
-        id: "q2",
+        id: questionId2,
         status: "answered",
         body: "Can this chunk alter runner behavior?",
         asked_at: "2026-05-07T18:01:00.000Z",
@@ -153,7 +156,7 @@ describe("Phase 7a dispatch readiness YAML schema", () => {
     ]);
     expect(task.chunks[0].decisions).toEqual([
       {
-        id: "d1",
+        id: decisionId1,
         body: "Keep committed metadata separate from local execution state.",
         decided_at: "2026-05-07T18:03:00.000Z"
       }
@@ -189,7 +192,7 @@ describe("Phase 7a dispatch readiness YAML schema", () => {
 
     task.chunks[0].questions = [
       {
-        id: "q1",
+        id: questionId1,
         status: "answered",
         body: "What is the answer?",
         asked_at: "2026-05-07T18:00:00.000Z",
@@ -211,7 +214,7 @@ describe("Phase 7a dispatch readiness YAML schema", () => {
 
     task.chunks[0].decisions = [
       {
-        id: "d1",
+        id: decisionId1,
         body: "Use SQLite for local state.",
         decided_at: "not-a-date"
       }

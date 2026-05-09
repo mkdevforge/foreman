@@ -62,14 +62,14 @@ chunks:
     status: todo
     stage: plan
     questions:
-      - id: q1
+      - id: q_019e0a43-440d-71ab-8a12-d96835bd56f1
         status: open
         body: Which auth boundary owns token refresh?
         asked_at: 2026-05-06T00:00:00.000Z
         answered_at: null
         answer: null
     decisions:
-      - id: d1
+      - id: d_019e0a43-440f-729e-8631-8cffb5344450
         body: Keep refresh handling in the API boundary.
         decided_at: 2026-05-06T00:00:00.000Z
     dispatch:

@@ -83,8 +83,8 @@ export interface ChunkRef {
 
 const TASK_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const CHUNK_ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
-const QUESTION_ID_PATTERN = /^q[1-9]\d*$/;
-const DECISION_ID_PATTERN = /^d[1-9]\d*$/;
+const QUESTION_ID_PATTERN = /^q_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const DECISION_ID_PATTERN = /^d_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ISO_UTC_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
 
 export function nowIso(): string {
@@ -113,13 +113,13 @@ export function assertValidChunkId(id: string): void {
 
 export function assertValidQuestionId(id: string): void {
   if (!QUESTION_ID_PATTERN.test(id)) {
-    throw new CliError(2, "invalid_question_id", `invalid question id '${id}'; expected q[1-9][0-9]*`);
+    throw new CliError(2, "invalid_question_id", `invalid question id '${id}'; expected q_<uuidv7>`);
   }
 }
 
 export function assertValidDecisionId(id: string): void {
   if (!DECISION_ID_PATTERN.test(id)) {
-    throw new CliError(2, "invalid_decision_id", `invalid decision id '${id}'; expected d[1-9][0-9]*`);
+    throw new CliError(2, "invalid_decision_id", `invalid decision id '${id}'; expected d_<uuidv7>`);
   }
 }
 

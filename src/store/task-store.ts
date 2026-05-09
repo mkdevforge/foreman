@@ -10,6 +10,7 @@ import {
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
+import { v7 as uuidv7 } from "uuid";
 import { parse, stringify } from "yaml";
 import { CliError } from "../cli/errors";
 import { getForemanPaths, type ForemanPaths } from "./repo";
@@ -603,27 +604,7 @@ function assertUniqueIds(items: { id: string }[], fieldName: string, source: str
 }
 
 function nextQuestionId(questions: ChunkQuestion[]): string {
-  let maxId = 0;
-
-  for (const question of questions) {
-    const match = /^q([1-9]\d*)$/.exec(question.id);
-    if (match === null) {
-      continue;
-    }
-
-    const value = Number(match[1]);
-    if (Number.isSafeInteger(value)) {
-      maxId = Math.max(maxId, value);
-    }
-  }
-
-  const existingIds = new Set(questions.map((question) => question.id));
-  let nextId = maxId + 1;
-  while (existingIds.has(`q${nextId}`)) {
-    nextId += 1;
-  }
-
-  return `q${nextId}`;
+  return nextPrefixedUuidId("q", questions.map((question) => question.id));
 }
 
 function validateDecision(value: unknown, source: string): ChunkDecision {
@@ -643,27 +624,18 @@ function validateDecision(value: unknown, source: string): ChunkDecision {
 }
 
 function nextDecisionId(decisions: ChunkDecision[]): string {
-  let maxId = 0;
+  return nextPrefixedUuidId("d", decisions.map((decision) => decision.id));
+}
 
-  for (const decision of decisions) {
-    const match = /^d([1-9]\d*)$/.exec(decision.id);
-    if (match === null) {
-      continue;
-    }
+function nextPrefixedUuidId(prefix: "q" | "d", existingIds: string[]): string {
+  const existing = new Set(existingIds);
 
-    const value = Number(match[1]);
-    if (Number.isSafeInteger(value)) {
-      maxId = Math.max(maxId, value);
+  while (true) {
+    const id = `${prefix}_${uuidv7()}`;
+    if (!existing.has(id)) {
+      return id;
     }
   }
-
-  const existingIds = new Set(decisions.map((decision) => decision.id));
-  let nextId = maxId + 1;
-  while (existingIds.has(`d${nextId}`)) {
-    nextId += 1;
-  }
-
-  return `d${nextId}`;
 }
 
 function validateDispatchReadiness(value: unknown, source: string): ChunkDispatchReadiness {
