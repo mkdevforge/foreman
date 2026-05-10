@@ -43,7 +43,7 @@ Complete the repo-scoped chunk lifecycle on top of the Phase 1a YAML store. By t
 - Notes use ISO 8601 UTC timestamps.
 - Note body is a plain string argument in this phase. No editor, stdin, or file support.
 - Preserve the same atomic write behavior and YAML formatting stance from Phase 1a.
-- Do not normalize or drop unknown future dispatch metadata such as chunk questions, decisions, risk gates, approval requirements, or run attempts.
+- Do not normalize or drop unknown future dispatch metadata such as chunk questions, decisions, risk gates, approval requirements, or readiness policy. Future run attempts are local SQLite state, not repo YAML; see `docs/dispatch-run-model.md`.
 
 ## Test Checkpoint
 

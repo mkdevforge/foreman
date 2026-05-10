@@ -142,7 +142,7 @@ A future dispatch UI should show:
 - running agents
 - runs needing review
 - rework loops
-- run attempts, costs, changed files, tests, and summaries
+- run attempts, costs, changed files, tests, and summaries from local SQLite state
 
 The UI can consume Foreman's JSON output initially. A daemon or local service can be introduced later if live updates require it.
 

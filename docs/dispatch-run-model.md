@@ -84,7 +84,7 @@ Recommended fields:
 
 - `id` prefixed UUIDv7, for example `evt_<uuidv7>`
 - `run_id`
-- `attempt_id`
+- `attempt_id`: nullable for run-level events before an attempt exists
 - `ts`
 - `type`
 - `message`

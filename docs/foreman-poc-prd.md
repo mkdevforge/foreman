@@ -90,7 +90,7 @@ A session can be linked to multiple (task_id, chunk_id) pairs. A chunk can have 
 
 The repo-scoped task YAML is v0-known-field validated, but it must remain future-compatible. v0 commands should validate and mutate the fields they own, while preserving unknown task-level and chunk-level fields when rewriting `.foreman/tasks/*.yaml`.
 
-This is intentional groundwork for later dispatch metadata such as questions, decisions, risk gates, approval requirements, and run attempts. v0 commands do not need to render or interpret those future fields unless explicitly documented.
+This is intentional groundwork for later shared dispatch metadata such as questions, decisions, risk gates, approval requirements, and readiness policy. Future run attempts are local SQLite state, not repo YAML; see `docs/dispatch-run-model.md`.
 
 ---
 

@@ -20,7 +20,7 @@ This is a compatibility guardrail for post-v0 dispatch and human-gate metadata. 
   - `dispatch`
   - `risk_level`
   - `approval_required`
-  - `run_attempts`
+  - legacy `run_attempts` placeholder fields for preservation only; real dispatch run attempts are local SQLite state per `docs/dispatch-run-model.md`
 
 ## Out of Scope
 
