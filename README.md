@@ -115,6 +115,8 @@ foreman chunk ready FOREMAN-1/parser --json
 
 Readiness blockers include empty specs, open questions, missing dispatch metadata, dispatch metadata that is not `ready`, missing accepted decisions when approval/risk policy requires them, blocked/done chunk status, and discovery-stage chunks.
 
+Future dispatch run state is local SQLite state, not repo YAML. See `docs/dispatch-run-model.md` for the storage boundary before implementing runner commands.
+
 ## Active Work Context
 
 Tell Foreman what task/chunk the next agent session should link to:

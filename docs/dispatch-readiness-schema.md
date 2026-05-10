@@ -4,6 +4,8 @@ This document records the post-v0 repo YAML shape for chunk-level human-gate met
 
 The active backlog lives in `.foreman/tasks/*.yaml`. This schema is shared repo context; local identity, process state, costs, and agent session details stay in `~/.foreman/foreman.db`.
 
+Future dispatch run state is documented separately in `docs/dispatch-run-model.md`. Readiness metadata gates whether a chunk may be dispatched; it is not a record of run attempts.
+
 ## Chunk Questions
 
 Questions capture missing context as an explicit successful workflow state.
