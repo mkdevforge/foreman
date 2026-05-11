@@ -38,7 +38,7 @@ YAML is still the right place for data that should follow the task through Git h
 
 ## SQLite Shape
 
-Database schema versions 2 and 3 add the dispatch persistence foundation. The runner and user-facing dispatch commands are still future work, but they should build on these entities rather than adding run-attempt fields to YAML.
+Database schema versions 2 and 3 add the dispatch persistence foundation. The runner is still future work, but the read-only dispatch query surface builds on these entities rather than adding run-attempt fields to YAML.
 
 ### `dispatch_runs`
 
@@ -107,6 +107,15 @@ Fields:
 Future dispatch should prefer sibling worktrees for implementation attempts. Worktree paths, branches, and cleanup state are local execution details and therefore belong in SQLite attempt rows, not YAML.
 
 Readiness evaluation should run against the control repo's YAML before a dispatch run is created. The attempt workspace can then be created from the same repo remote/branch context.
+
+## Query Surface
+
+The initial user-facing query surface is read-only:
+
+- `foreman dispatch list [--task <id>] [--chunk <id>] [--status <status>]`
+- `foreman dispatch show <run-id-or-prefix>`
+
+JSON output exposes stable snake_case run fields plus `attempts` and `events`. Attempt rows include `session_id` and hydrate `session` with the same overview shape used by `foreman session list` when the referenced session is still present.
 
 ## UI Contract
 

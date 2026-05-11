@@ -117,6 +117,19 @@ Readiness blockers include empty specs, open questions, missing dispatch metadat
 
 Future dispatch run state is local SQLite state, not repo YAML. See `docs/dispatch-run-model.md` for the storage boundary before implementing runner commands.
 
+## Dispatch Run Queries
+
+Persisted dispatch runs are local SQLite records. The current dispatch surface is read-only; it does not launch agents or create worktrees.
+
+```sh
+foreman dispatch list
+foreman dispatch list --task FOREMAN-1 --chunk parser --status running
+foreman dispatch show <run-id-or-prefix>
+foreman dispatch show <run-id-or-prefix> --json
+```
+
+`foreman dispatch list --json` returns `dispatch_runs`. `foreman dispatch show --json` returns `dispatch_run`. Each run includes run fields, attempts, events, and any attempt-linked session overview.
+
 ## Active Work Context
 
 Tell Foreman what task/chunk the next agent session should link to:

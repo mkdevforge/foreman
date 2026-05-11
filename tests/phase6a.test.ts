@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { openForemanDatabase } from "../src/db/client";
+import { insertDispatchAttempt, insertDispatchEvent, insertDispatchRun } from "../src/db/dispatch-writes";
 
 const repoRoot = fileURLToPath(new URL("../", import.meta.url));
 const foremanBin = join(repoRoot, "foreman");
@@ -70,6 +71,7 @@ describe("Phase 6a automated acceptance hardening", () => {
     expectJsonCommand(repo, homeDir, ["stop"], ["active", "cleared"]);
 
     seedAcceptanceSessions(homeDir, repo);
+    seedAcceptanceDispatchRuns(homeDir);
 
     expectJsonCommand(repo, homeDir, ["session", "list"], ["sessions"]);
     expectJsonCommand(repo, homeDir, ["session", "show", "018f6000-0000-7000-8000-000000000001", "--full"], [
@@ -85,6 +87,10 @@ describe("Phase 6a automated acceptance hardening", () => {
     ]);
     expectJsonCommand(repo, homeDir, ["catalog", "--unlink", "018f6000-0000-7000-8000-000000000002", "FOREMAN-1/api"], [
       "catalog"
+    ]);
+    expectJsonCommand(repo, homeDir, ["dispatch", "list"], ["dispatch_runs"]);
+    expectJsonCommand(repo, homeDir, ["dispatch", "show", "run_019f6000-0000-7000-8000-000000000001"], [
+      "dispatch_run"
     ]);
   });
 
@@ -149,6 +155,49 @@ function seedAcceptanceSessions(homeDir: string, projectPath: string): void {
       summary: "Unattached API session.",
       linked: false
     });
+  } finally {
+    db.close();
+  }
+}
+
+function seedAcceptanceDispatchRuns(homeDir: string): void {
+  const db = openForemanDatabase({ homeDir });
+
+  try {
+    expect(
+      insertDispatchRun(db, {
+        id: "run_019f6000-0000-7000-8000-000000000001",
+        taskId: "FOREMAN-1",
+        chunkId: "api",
+        requestedStage: "review",
+        status: "running",
+        requestedBy: "local-user",
+        source: "cli",
+        createdAt: "2026-05-06T10:05:00.000Z",
+        updatedAt: "2026-05-06T10:06:00.000Z"
+      })
+    ).toBe(1);
+    expect(
+      insertDispatchAttempt(db, {
+        id: "attempt_019f6000-0000-7000-8000-000000000001",
+        runId: "run_019f6000-0000-7000-8000-000000000001",
+        attemptNumber: 1,
+        status: "streaming_turn",
+        tool: "codex",
+        sessionId: "018f6000-0000-7000-8000-000000000001"
+      })
+    ).toBe(1);
+    expect(
+      insertDispatchEvent(db, {
+        id: "evt_019f6000-0000-7000-8000-000000000001",
+        runId: "run_019f6000-0000-7000-8000-000000000001",
+        attemptId: "attempt_019f6000-0000-7000-8000-000000000001",
+        ts: "2026-05-06T10:06:00.000Z",
+        type: "attempt_started",
+        message: "Attempt started.",
+        dataJson: "{\"tool\":\"codex\"}"
+      })
+    ).toBe(1);
   } finally {
     db.close();
   }

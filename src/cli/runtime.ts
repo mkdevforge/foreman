@@ -5,6 +5,16 @@ import { resolve } from "node:path";
 import { CliError, type ExitCode } from "./errors";
 import { formatJsonData, formatJsonError, renderTextError } from "./output";
 import { openForemanDatabase } from "../db/client";
+import {
+  getDispatchRunDetailById,
+  listDispatchRunDetails,
+  resolveDispatchRunPrefix,
+  type DispatchAttemptDetail,
+  type DispatchEventRecord,
+  type DispatchRunDetail,
+  type DispatchRunFilters,
+  type DispatchRunRecord
+} from "../db/dispatch-queries";
 import { linkSessionChunk, unlinkSessionChunk } from "../db/session-writes";
 import {
   SESSION_SOURCES,
@@ -261,6 +271,7 @@ function createProgram(json: boolean, io: CliIo): Command {
 
   program.addCommand(createReviewCommand(json, io));
   program.addCommand(createCatalogCommand(json, io));
+  program.addCommand(createDispatchCommand(json, io));
   program.addCommand(createQuestionCommand(json, io));
   program.addCommand(createDecisionCommand(json, io));
   program.addCommand(createTaskCommand(json, io));
@@ -592,6 +603,56 @@ function createCatalogCommand(json: boolean, io: CliIo): Command {
 
       runInteractiveCatalog(listing, io);
     });
+}
+
+function createDispatchCommand(json: boolean, io: CliIo): Command {
+  const dispatch = configureCommand(new Command("dispatch"), io)
+    .description("Query persisted dispatch runs.")
+    .action(() => {
+      throw new CliError(2, "missing_command", "missing dispatch command");
+    });
+
+  configureCommand(dispatch.command("list"), io)
+    .description("List persisted dispatch runs.")
+    .option("--task <id>")
+    .option("--chunk <id>")
+    .option("--status <status>")
+    .action((options: { task?: string; chunk?: string; status?: string }) => {
+      const runs = withForemanDatabase((db) => listDispatchRunDetails(db, toDispatchRunFilters(options)));
+
+      writeData(json, io, renderDispatchRunList(runs), { dispatch_runs: runs.map(toJsonDispatchRunDetail) });
+    });
+
+  configureCommand(dispatch.command("show"), io)
+    .description("Show a persisted dispatch run.")
+    .argument("<run-id-or-prefix>")
+    .action((prefix: string) => {
+      const run = withForemanDatabase((db) => {
+        const resolved = resolveDispatchRunPrefix(db, prefix);
+
+        if (resolved.kind === "missing") {
+          throw new CliError(1, "dispatch_run_not_found", `dispatch run '${prefix}' was not found`);
+        }
+
+        if (resolved.kind === "ambiguous") {
+          throw new CliError(
+            1,
+            "ambiguous_dispatch_run_prefix",
+            `dispatch run prefix '${prefix}' is ambiguous; candidates: ${resolved.candidates.join(", ")}`
+          );
+        }
+
+        return getDispatchRunDetailById(db, resolved.id);
+      });
+
+      if (run === null) {
+        throw new CliError(1, "dispatch_run_not_found", `dispatch run '${prefix}' was not found`);
+      }
+
+      writeData(json, io, renderDispatchRunShow(run), { dispatch_run: toJsonDispatchRunDetail(run) });
+    });
+
+  return dispatch;
 }
 
 function createSessionCommand(json: boolean, io: CliIo): Command {
@@ -1082,6 +1143,14 @@ function buildCatalogListing(options: CatalogOptions): CatalogListing {
   return { scope, startedAtSince, candidates };
 }
 
+function toDispatchRunFilters(options: { task?: string; chunk?: string; status?: string }): DispatchRunFilters {
+  return {
+    ...(options.task === undefined ? {} : { taskId: options.task }),
+    ...(options.chunk === undefined ? {} : { chunkId: options.chunk }),
+    ...(options.status === undefined ? {} : { status: options.status })
+  };
+}
+
 function resolveCatalogScope(all: boolean): CatalogScope {
   const repoRoot = findRepoRoot();
   const repoRemote = getGitOriginRemote(repoRoot);
@@ -1443,6 +1512,59 @@ function toJsonCatalogScope(scope: CatalogScope) {
     repo_remote: scope.repoRemote,
     normalized_repo_remote: scope.normalizedRepoRemote,
     path_only: scope.pathOnly
+  };
+}
+
+function toJsonDispatchRunDetail(detail: DispatchRunDetail) {
+  return {
+    ...toJsonDispatchRun(detail.run),
+    attempts: detail.attempts.map(toJsonDispatchAttempt),
+    events: detail.events.map(toJsonDispatchEvent)
+  };
+}
+
+function toJsonDispatchRun(run: DispatchRunRecord) {
+  return {
+    id: run.id,
+    task_id: run.task_id,
+    chunk_id: run.chunk_id,
+    requested_stage: run.requested_stage,
+    status: run.status,
+    requested_by: run.requested_by,
+    source: run.source,
+    created_at: run.created_at,
+    updated_at: run.updated_at,
+    finished_at: run.finished_at
+  };
+}
+
+function toJsonDispatchAttempt(attempt: DispatchAttemptDetail) {
+  return {
+    id: attempt.id,
+    run_id: attempt.run_id,
+    attempt_number: attempt.attempt_number,
+    status: attempt.status,
+    tool: attempt.tool,
+    workspace_path: attempt.workspace_path,
+    worktree_branch: attempt.worktree_branch,
+    process_id: attempt.process_id,
+    started_at: attempt.started_at,
+    ended_at: attempt.ended_at,
+    error_message: attempt.error_message,
+    session_id: attempt.session_id,
+    session: attempt.session === null ? null : toJsonSessionOverview(attempt.session)
+  };
+}
+
+function toJsonDispatchEvent(event: DispatchEventRecord) {
+  return {
+    id: event.id,
+    run_id: event.run_id,
+    attempt_id: event.attempt_id,
+    ts: event.ts,
+    type: event.type,
+    message: event.message,
+    data_json: event.data_json
   };
 }
 
@@ -1841,6 +1963,36 @@ function renderCatalogOneShotResult(result: CatalogOneShotResult): string {
   return `${result.changed ? "Unlinked" : "No existing link for"} session ${result.sessionId} from ${result.taskId}/${result.chunkId}.\n`;
 }
 
+function renderDispatchRunList(runs: DispatchRunDetail[]): string {
+  if (runs.length === 0) {
+    return "No dispatch runs found.\n";
+  }
+
+  return `${runs.map(formatDispatchRunListRow).join("\n")}\n`;
+}
+
+function renderDispatchRunShow(detail: DispatchRunDetail): string {
+  const run = detail.run;
+  const lines = [
+    `Dispatch Run ${run.id}`,
+    `Task: ${run.task_id}`,
+    `Chunk: ${run.chunk_id}`,
+    `Requested stage: ${run.requested_stage}`,
+    `Status: ${run.status}`,
+    `Requested by: ${run.requested_by ?? "null"}`,
+    `Source: ${run.source}`,
+    `Created: ${run.created_at}`,
+    `Updated: ${run.updated_at}`,
+    `Finished: ${run.finished_at ?? "null"}`,
+    "Attempts:",
+    ...renderDispatchAttempts(detail.attempts),
+    "Events:",
+    ...renderDispatchEvents(detail.events)
+  ];
+
+  return `${lines.join("\n")}\n`;
+}
+
 function renderSessionCostReport(report: SessionCostReport): string {
   const lines = [
     `Session cost by ${report.by}`,
@@ -1915,6 +2067,70 @@ function formatSessionListRow(session: SessionOverview): string {
     `chunks=${formatSessionChunksInline(session.linked_chunks)}`,
     `summary=${firstLine(session.summary?.summary_md ?? "null")}`
   ].join("  ");
+}
+
+function formatDispatchRunListRow(detail: DispatchRunDetail): string {
+  const run = detail.run;
+
+  return [
+    run.id,
+    run.status,
+    `${run.task_id}/${run.chunk_id}`,
+    `stage=${run.requested_stage}`,
+    `attempts=${detail.attempts.length}`,
+    `events=${detail.events.length}`,
+    `created=${run.created_at}`
+  ].join("  ");
+}
+
+function renderDispatchAttempts(attempts: DispatchAttemptDetail[]): string[] {
+  if (attempts.length === 0) {
+    return ["  none"];
+  }
+
+  return attempts.flatMap((attempt) => [
+    `  ${attempt.id}  #${attempt.attempt_number}  ${attempt.status}  ${attempt.tool}`,
+    `    Session: ${formatDispatchAttemptSession(attempt)}`,
+    `    Workspace: ${attempt.workspace_path ?? "null"}`,
+    `    Worktree branch: ${attempt.worktree_branch ?? "null"}`,
+    `    Process: ${attempt.process_id ?? "null"}`,
+    `    Started: ${attempt.started_at ?? "null"}`,
+    `    Ended: ${attempt.ended_at ?? "null"}`,
+    `    Error: ${attempt.error_message ?? "null"}`
+  ]);
+}
+
+function formatDispatchAttemptSession(attempt: DispatchAttemptDetail): string {
+  if (attempt.session === null) {
+    return attempt.session_id ?? "null";
+  }
+
+  return [
+    attempt.session.id,
+    attempt.session.source,
+    attempt.session.started_at,
+    `cost_usd=${formatSessionCost(attempt.session.usage)}`,
+    `chunks=${formatSessionChunksInline(attempt.session.linked_chunks)}`
+  ].join("  ");
+}
+
+function renderDispatchEvents(events: DispatchEventRecord[]): string[] {
+  if (events.length === 0) {
+    return ["  none"];
+  }
+
+  return events.map((event) =>
+    [
+      "  ",
+      event.ts,
+      "  ",
+      event.type,
+      "  ",
+      `attempt=${event.attempt_id ?? "null"}`,
+      "  ",
+      event.message
+    ].join("")
+  );
 }
 
 function formatSessionUsage(usage: SessionUsage | null): string {

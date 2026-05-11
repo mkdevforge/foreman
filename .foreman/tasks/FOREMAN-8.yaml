@@ -5,7 +5,7 @@ source_ref: null
 description: Add local SQLite persistence for future Foreman dispatch runs before implementing runner behavior.
 status: doing
 created_at: 2026-05-11T00:45:35.283Z
-updated_at: 2026-05-11T01:40:18.808Z
+updated_at: 2026-05-11T15:19:35.068Z
 chunks:
   - id: sqlite-dispatch-schema
     title: SQLite dispatch schema
@@ -39,10 +39,10 @@ chunks:
 
       - Tests cover fresh schema creation, v1/v2 migration, constraints, cascades/nulling, and
       helper round-trips.
-    status: review
+    status: done
     stage: review
     created_at: 2026-05-11T00:45:39.060Z
-    updated_at: 2026-05-11T01:40:18.808Z
+    updated_at: 2026-05-11T15:13:14.754Z
     notes:
       - ts: 2026-05-11T00:53:39.926Z
         body: "Implemented schema v2 dispatch persistence: dispatch_runs, dispatch_attempts,
@@ -79,8 +79,12 @@ chunks:
       - Keep output useful for the future UI.
 
       - Do not launch agents or create worktrees in this slice.
-    status: todo
-    stage: discovery
+    status: review
+    stage: review
     created_at: 2026-05-11T00:45:43.076Z
-    updated_at: 2026-05-11T00:45:43.076Z
-    notes: []
+    updated_at: 2026-05-11T15:19:35.068Z
+    notes:
+      - ts: 2026-05-11T15:19:24.797Z
+        body: "Implemented read-only dispatch query surface: foreman dispatch list/show now expose persisted
+          runs, attempts, events, and attempt-linked session overviews in stable JSON. Added CLI
+          coverage, docs, and kept runner/worktree behavior out of scope."

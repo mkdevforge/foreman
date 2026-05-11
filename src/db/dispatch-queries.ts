@@ -1,4 +1,5 @@
 import type { Database, SQLQueryBindings } from "bun:sqlite";
+import { getSessionById, type SessionOverview } from "./session-queries";
 
 export interface DispatchRunRecord {
   id: string;
@@ -28,6 +29,10 @@ export interface DispatchAttemptRecord {
   session_id: string | null;
 }
 
+export interface DispatchAttemptDetail extends DispatchAttemptRecord {
+  session: SessionOverview | null;
+}
+
 export interface DispatchEventRecord {
   id: string;
   run_id: string;
@@ -38,11 +43,22 @@ export interface DispatchEventRecord {
   data_json: string;
 }
 
+export interface DispatchRunDetail {
+  run: DispatchRunRecord;
+  attempts: DispatchAttemptDetail[];
+  events: DispatchEventRecord[];
+}
+
 export interface DispatchRunFilters {
   taskId?: string;
   chunkId?: string;
   status?: string;
 }
+
+export type DispatchRunPrefixResolution =
+  | { kind: "matched"; id: string }
+  | { kind: "missing" }
+  | { kind: "ambiguous"; candidates: string[] };
 
 export function getDispatchRunById(db: Database, id: string): DispatchRunRecord | null {
   return db
@@ -62,6 +78,12 @@ export function getDispatchRunById(db: Database, id: string): DispatchRunRecord 
       WHERE id = ?`
     )
     .get(id);
+}
+
+export function getDispatchRunDetailById(db: Database, id: string): DispatchRunDetail | null {
+  const run = getDispatchRunById(db, id);
+
+  return run === null ? null : hydrateDispatchRunDetail(db, run);
 }
 
 export function listDispatchRuns(db: Database, filters: DispatchRunFilters = {}): DispatchRunRecord[] {
@@ -103,6 +125,35 @@ export function listDispatchRuns(db: Database, filters: DispatchRunFilters = {})
     .all(...params);
 }
 
+export function listDispatchRunDetails(db: Database, filters: DispatchRunFilters = {}): DispatchRunDetail[] {
+  return listDispatchRuns(db, filters).map((run) => hydrateDispatchRunDetail(db, run));
+}
+
+export function resolveDispatchRunPrefix(db: Database, prefix: string): DispatchRunPrefixResolution {
+  const exact = db.query<{ id: string }, [string]>("SELECT id FROM dispatch_runs WHERE id = ?").get(prefix);
+
+  if (exact !== null) {
+    return { kind: "matched", id: exact.id };
+  }
+
+  const candidates = db
+    .query<{ id: string }, [number, string]>(
+      "SELECT id FROM dispatch_runs WHERE substr(id, 1, ?) = ? ORDER BY id ASC"
+    )
+    .all(prefix.length, prefix)
+    .map((row) => row.id);
+
+  if (candidates.length === 0) {
+    return { kind: "missing" };
+  }
+
+  if (candidates.length === 1) {
+    return { kind: "matched", id: candidates[0] };
+  }
+
+  return { kind: "ambiguous", candidates };
+}
+
 export function listDispatchAttemptsForRun(db: Database, runId: string): DispatchAttemptRecord[] {
   return db
     .query<DispatchAttemptRecord, [string]>(
@@ -142,4 +193,15 @@ export function listDispatchEventsForRun(db: Database, runId: string): DispatchE
       ORDER BY ts ASC, id ASC`
     )
     .all(runId);
+}
+
+function hydrateDispatchRunDetail(db: Database, run: DispatchRunRecord): DispatchRunDetail {
+  return {
+    run,
+    attempts: listDispatchAttemptsForRun(db, run.id).map((attempt) => ({
+      ...attempt,
+      session: attempt.session_id === null ? null : getSessionById(db, attempt.session_id, false)
+    })),
+    events: listDispatchEventsForRun(db, run.id)
+  };
 }
