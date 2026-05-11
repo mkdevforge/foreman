@@ -5,7 +5,7 @@ source_ref: null
 description: Add local SQLite persistence for future Foreman dispatch runs before implementing runner behavior.
 status: doing
 created_at: 2026-05-11T00:45:35.283Z
-updated_at: 2026-05-11T00:53:42.980Z
+updated_at: 2026-05-11T01:40:18.808Z
 chunks:
   - id: sqlite-dispatch-schema
     title: SQLite dispatch schema
@@ -15,7 +15,7 @@ chunks:
 
       Scope:
 
-      - Add database schema version 2.
+      - Add database schema versions 2 and 3.
 
       - Add `dispatch_runs`, `dispatch_attempts`, and `dispatch_events` tables.
 
@@ -37,18 +37,23 @@ chunks:
       - Dispatch attempts can later link to captured sessions without changing existing
       `session_chunks` semantics.
 
-      - Tests cover fresh schema creation, v1-to-v2 migration, constraints, cascades/nulling, and
+      - Tests cover fresh schema creation, v1/v2 migration, constraints, cascades/nulling, and
       helper round-trips.
     status: review
     stage: review
     created_at: 2026-05-11T00:45:39.060Z
-    updated_at: 2026-05-11T00:53:42.980Z
+    updated_at: 2026-05-11T01:40:18.808Z
     notes:
       - ts: 2026-05-11T00:53:39.926Z
         body: "Implemented schema v2 dispatch persistence: dispatch_runs, dispatch_attempts,
           dispatch_events, low-level write/query helpers, v1 migration coverage, helper round-trip
           tests, and docs alignment. No runner, worktree creation, or dispatch CLI launch behavior
           added in this slice."
+      - ts: 2026-05-11T01:40:18.808Z
+        body: "Addressed review findings: added schema v3 triggers so dispatch events cannot point at
+          attempts from another run, and changed dispatch status helpers so omitted optional fields
+          preserve existing values while explicit null clears them. Added migration and helper
+          regression coverage."
     dispatch:
       status: ready
       risk_level: low

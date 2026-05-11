@@ -38,7 +38,7 @@ YAML is still the right place for data that should follow the task through Git h
 
 ## SQLite Shape
 
-Database schema version 2 adds the dispatch persistence foundation. The runner and user-facing dispatch commands are still future work, but they should build on these entities rather than adding run-attempt fields to YAML.
+Database schema versions 2 and 3 add the dispatch persistence foundation. The runner and user-facing dispatch commands are still future work, but they should build on these entities rather than adding run-attempt fields to YAML.
 
 ### `dispatch_runs`
 
@@ -94,6 +94,8 @@ Fields:
 
 - A dispatch run references exactly one task/chunk.
 - A dispatch attempt belongs to exactly one dispatch run.
+- A dispatch event with an `attempt_id` must reference an attempt that belongs to the same `run_id`.
+- A dispatch attempt with existing events must not be moved to another run.
 - A captured agent session can be linked to a dispatch attempt after hooks ingest it.
 - The existing `session_chunks` table remains the source of truth for chunk/session linkage.
 - Re-running ingestion must not duplicate sessions, prompts, tool calls, chunk links, runs, attempts, or events.

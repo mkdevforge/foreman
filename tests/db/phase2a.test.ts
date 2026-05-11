@@ -38,6 +38,11 @@ const expectedIndexes = [
   "idx_tool_calls_session",
   "idx_tool_calls_tool"
 ];
+const expectedTriggers = [
+  "trg_dispatch_attempts_run_update",
+  "trg_dispatch_events_attempt_run_insert",
+  "trg_dispatch_events_attempt_run_update"
+];
 
 interface FileStatSnapshot {
   mtimeMs: number;
@@ -286,7 +291,74 @@ function createLegacyVersion1Database(path: string): void {
   }
 }
 
-function objectNames(db: Database, type: "table" | "index"): string[] {
+function createLegacyVersion2Database(path: string): void {
+  createLegacyVersion1Database(path);
+
+  const db = new Database(path, {
+    create: false,
+    readwrite: true,
+    strict: true
+  });
+
+  try {
+    const statements = [
+      `CREATE TABLE dispatch_runs (
+        id                TEXT PRIMARY KEY,
+        task_id           TEXT NOT NULL,
+        chunk_id          TEXT NOT NULL,
+        requested_stage   TEXT NOT NULL,
+        status            TEXT NOT NULL,
+        requested_by      TEXT,
+        source            TEXT NOT NULL,
+        created_at        TEXT NOT NULL,
+        updated_at        TEXT NOT NULL,
+        finished_at       TEXT
+      )`,
+      "CREATE INDEX idx_dispatch_runs_chunk ON dispatch_runs(task_id, chunk_id)",
+      "CREATE INDEX idx_dispatch_runs_status ON dispatch_runs(status)",
+      "CREATE INDEX idx_dispatch_runs_created ON dispatch_runs(created_at DESC)",
+      `CREATE TABLE dispatch_attempts (
+        id                TEXT PRIMARY KEY,
+        run_id            TEXT NOT NULL REFERENCES dispatch_runs(id) ON DELETE CASCADE,
+        attempt_number    INTEGER NOT NULL,
+        status            TEXT NOT NULL,
+        tool              TEXT NOT NULL,
+        workspace_path    TEXT,
+        worktree_branch   TEXT,
+        process_id        INTEGER,
+        started_at        TEXT,
+        ended_at          TEXT,
+        error_message     TEXT,
+        session_id        TEXT REFERENCES sessions(id) ON DELETE SET NULL,
+        UNIQUE (run_id, attempt_number)
+      )`,
+      "CREATE INDEX idx_dispatch_attempts_run ON dispatch_attempts(run_id)",
+      "CREATE INDEX idx_dispatch_attempts_session ON dispatch_attempts(session_id)",
+      "CREATE INDEX idx_dispatch_attempts_status ON dispatch_attempts(status)",
+      `CREATE TABLE dispatch_events (
+        id          TEXT PRIMARY KEY,
+        run_id      TEXT NOT NULL REFERENCES dispatch_runs(id) ON DELETE CASCADE,
+        attempt_id  TEXT REFERENCES dispatch_attempts(id) ON DELETE SET NULL,
+        ts          TEXT NOT NULL,
+        type        TEXT NOT NULL,
+        message     TEXT NOT NULL,
+        data_json   TEXT NOT NULL
+      )`,
+      "CREATE INDEX idx_dispatch_events_run_ts ON dispatch_events(run_id, ts ASC, id ASC)",
+      "CREATE INDEX idx_dispatch_events_attempt_ts ON dispatch_events(attempt_id, ts ASC, id ASC)",
+      "CREATE INDEX idx_dispatch_events_type ON dispatch_events(type)",
+      "PRAGMA user_version = 2"
+    ];
+
+    for (const statement of statements) {
+      runSql(db, statement);
+    }
+  } finally {
+    db.close();
+  }
+}
+
+function objectNames(db: Database, type: "table" | "index" | "trigger"): string[] {
   return db
     .query<{ name: string }, [string]>(
       "SELECT name FROM sqlite_schema WHERE type = ? AND name NOT LIKE 'sqlite_%' ORDER BY name"
@@ -366,18 +438,19 @@ describe("foreman SQLite schema", () => {
     }
   });
 
-  test("creates all expected tables and documented indexes", () => {
+  test("creates all expected tables, indexes, and triggers", () => {
     const db = openTempDatabase();
 
     try {
       expect(objectNames(db, "table")).toEqual(expectedTables);
       expect(objectNames(db, "index")).toEqual(expectedIndexes);
+      expect(objectNames(db, "trigger")).toEqual(expectedTriggers);
     } finally {
       db.close();
     }
   });
 
-  test("migrates an existing version 1 database to version 2 without dropping sessions", () => {
+  test("migrates an existing version 1 database to the current schema without dropping sessions", () => {
     const dbPath = join(createTempDir(), "legacy-v1.db");
     createLegacyVersion1Database(dbPath);
 
@@ -389,6 +462,71 @@ describe("foreman SQLite schema", () => {
       expect(objectNames(db, "table")).toContain("dispatch_runs");
       expect(objectNames(db, "table")).toContain("dispatch_attempts");
       expect(objectNames(db, "table")).toContain("dispatch_events");
+      expect(objectNames(db, "trigger")).toEqual(expectedTriggers);
+    } finally {
+      db.close();
+    }
+  });
+
+  test("migrates an existing version 2 database and enforces dispatch event attempt ownership", () => {
+    const dbPath = join(createTempDir(), "legacy-v2.db");
+    createLegacyVersion2Database(dbPath);
+
+    const db = openForemanDatabase({ databasePath: dbPath });
+
+    try {
+      expect(getUserVersion(db)).toBe(FOREMAN_DB_SCHEMA_VERSION);
+      expect(objectNames(db, "trigger")).toEqual(expectedTriggers);
+
+      runSql(
+        db,
+        `INSERT INTO dispatch_runs (
+          id,
+          task_id,
+          chunk_id,
+          requested_stage,
+          status,
+          source,
+          created_at,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        ["run-a", "FOREMAN-8", "chunk-a", "implement", "queued", "cli", baseTs, baseTs]
+      );
+      runSql(
+        db,
+        `INSERT INTO dispatch_runs (
+          id,
+          task_id,
+          chunk_id,
+          requested_stage,
+          status,
+          source,
+          created_at,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        ["run-b", "FOREMAN-8", "chunk-b", "implement", "queued", "cli", baseTs, baseTs]
+      );
+      runSql(
+        db,
+        "INSERT INTO dispatch_attempts (id, run_id, attempt_number, status, tool) VALUES (?, ?, ?, ?, ?)",
+        ["attempt-b", "run-b", 1, "streaming_turn", "codex"]
+      );
+
+      expect(() =>
+        runSql(
+          db,
+          `INSERT INTO dispatch_events (
+            id,
+            run_id,
+            attempt_id,
+            ts,
+            type,
+            message,
+            data_json
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          ["event-cross-run", "run-a", "attempt-b", baseTs, "attempt_started", "Invalid cross-run event.", "{}"]
+        )
+      ).toThrow("dispatch_events attempt_id must belong to run_id");
     } finally {
       db.close();
     }

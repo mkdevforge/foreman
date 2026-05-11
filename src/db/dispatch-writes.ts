@@ -76,11 +76,16 @@ export function updateDispatchRunStatus(
   db: Database,
   input: { id: string; status: string; updatedAt: string; finishedAt?: string | null }
 ): number {
-  return runSql(
-    db,
-    "UPDATE dispatch_runs SET status = ?, updated_at = ?, finished_at = ? WHERE id = ?",
-    [input.status, input.updatedAt, input.finishedAt ?? null, input.id]
-  );
+  const assignments = ["status = ?", "updated_at = ?"];
+  const params: SQLQueryBindings[] = [input.status, input.updatedAt];
+
+  if ("finishedAt" in input) {
+    assignments.push("finished_at = ?");
+    params.push(input.finishedAt ?? null);
+  }
+
+  params.push(input.id);
+  return runSql(db, `UPDATE dispatch_runs SET ${assignments.join(", ")} WHERE id = ?`, params);
 }
 
 export function insertDispatchAttempt(db: Database, input: InsertDispatchAttemptInput): number {
@@ -127,11 +132,26 @@ export function updateDispatchAttemptStatus(
     sessionId?: string | null;
   }
 ): number {
-  return runSql(
-    db,
-    "UPDATE dispatch_attempts SET status = ?, ended_at = ?, error_message = ?, session_id = ? WHERE id = ?",
-    [input.status, input.endedAt ?? null, input.errorMessage ?? null, input.sessionId ?? null, input.id]
-  );
+  const assignments = ["status = ?"];
+  const params: SQLQueryBindings[] = [input.status];
+
+  if ("endedAt" in input) {
+    assignments.push("ended_at = ?");
+    params.push(input.endedAt ?? null);
+  }
+
+  if ("errorMessage" in input) {
+    assignments.push("error_message = ?");
+    params.push(input.errorMessage ?? null);
+  }
+
+  if ("sessionId" in input) {
+    assignments.push("session_id = ?");
+    params.push(input.sessionId ?? null);
+  }
+
+  params.push(input.id);
+  return runSql(db, `UPDATE dispatch_attempts SET ${assignments.join(", ")} WHERE id = ?`, params);
 }
 
 export function insertDispatchEvent(db: Database, input: InsertDispatchEventInput): number {

@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
 
-export const FOREMAN_DB_SCHEMA_VERSION = 2;
+export const FOREMAN_DB_SCHEMA_VERSION = 3;
 
 const MIGRATION_1_STATEMENTS = [
   `CREATE TABLE sessions (
@@ -115,6 +115,48 @@ const MIGRATION_2_STATEMENTS = [
   "CREATE INDEX idx_dispatch_events_run_ts ON dispatch_events(run_id, ts ASC, id ASC)",
   "CREATE INDEX idx_dispatch_events_attempt_ts ON dispatch_events(attempt_id, ts ASC, id ASC)",
   "CREATE INDEX idx_dispatch_events_type ON dispatch_events(type)",
+  "PRAGMA user_version = 2"
+] as const;
+
+const MIGRATION_3_STATEMENTS = [
+  `CREATE TRIGGER trg_dispatch_events_attempt_run_insert
+  BEFORE INSERT ON dispatch_events
+  FOR EACH ROW
+  WHEN NEW.attempt_id IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1
+      FROM dispatch_attempts
+      WHERE dispatch_attempts.id = NEW.attempt_id
+        AND dispatch_attempts.run_id = NEW.run_id
+    )
+  BEGIN
+    SELECT RAISE(ABORT, 'dispatch_events attempt_id must belong to run_id');
+  END`,
+  `CREATE TRIGGER trg_dispatch_events_attempt_run_update
+  BEFORE UPDATE OF run_id, attempt_id ON dispatch_events
+  FOR EACH ROW
+  WHEN NEW.attempt_id IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1
+      FROM dispatch_attempts
+      WHERE dispatch_attempts.id = NEW.attempt_id
+        AND dispatch_attempts.run_id = NEW.run_id
+    )
+  BEGIN
+    SELECT RAISE(ABORT, 'dispatch_events attempt_id must belong to run_id');
+  END`,
+  `CREATE TRIGGER trg_dispatch_attempts_run_update
+  BEFORE UPDATE OF run_id ON dispatch_attempts
+  FOR EACH ROW
+  WHEN EXISTS (
+    SELECT 1
+    FROM dispatch_events
+    WHERE dispatch_events.attempt_id = OLD.id
+      AND dispatch_events.run_id != NEW.run_id
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'dispatch_attempts run_id cannot orphan existing dispatch_events');
+  END`,
   `PRAGMA user_version = ${FOREMAN_DB_SCHEMA_VERSION}`
 ] as const;
 
@@ -139,6 +181,11 @@ export function migrateDatabaseSchema(db: Database): void {
 
   if (currentVersion < 2) {
     applyMigration2(db);
+    currentVersion = getUserVersion(db);
+  }
+
+  if (currentVersion < 3) {
+    applyMigration3(db);
   }
 
   const migratedVersion = getUserVersion(db);
@@ -172,6 +219,16 @@ function applyMigration1(db: Database): void {
 function applyMigration2(db: Database): void {
   const migration = db.transaction(() => {
     for (const statement of MIGRATION_2_STATEMENTS) {
+      db.run(statement);
+    }
+  });
+
+  migration.immediate();
+}
+
+function applyMigration3(db: Database): void {
+  const migration = db.transaction(() => {
+    for (const statement of MIGRATION_3_STATEMENTS) {
       db.run(statement);
     }
   });

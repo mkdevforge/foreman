@@ -247,6 +247,164 @@ describe("Phase 8a dispatch persistence foundation", () => {
     }
   });
 
+  test("status helpers preserve optional fields unless explicitly cleared", () => {
+    const db = openTempDatabase();
+
+    try {
+      const sessionId = seedSession(db);
+      const runId = insertRun(db);
+      expect(
+        updateDispatchRunStatus(db, {
+          id: runId,
+          status: "succeeded",
+          updatedAt: "2026-05-11T00:02:01.000Z",
+          finishedAt: "2026-05-11T00:02:01.000Z"
+        })
+      ).toBe(1);
+      expect(
+        updateDispatchRunStatus(db, {
+          id: runId,
+          status: "running",
+          updatedAt: "2026-05-11T00:03:00.000Z"
+        })
+      ).toBe(1);
+      expect(getDispatchRunById(db, runId)).toMatchObject({
+        status: "running",
+        updated_at: "2026-05-11T00:03:00.000Z",
+        finished_at: "2026-05-11T00:02:01.000Z"
+      });
+
+      expect(
+        insertDispatchAttempt(db, {
+          id: "attempt_019e1500-0001-7000-8000-000000000001",
+          runId,
+          attemptNumber: 1,
+          status: "failed",
+          tool: "codex",
+          endedAt: "2026-05-11T00:02:00.000Z",
+          errorMessage: "Previous failure.",
+          sessionId
+        })
+      ).toBe(1);
+      expect(
+        updateDispatchAttemptStatus(db, {
+          id: "attempt_019e1500-0001-7000-8000-000000000001",
+          status: "succeeded"
+        })
+      ).toBe(1);
+      expect(listDispatchAttemptsForRun(db, runId)[0]).toMatchObject({
+        status: "succeeded",
+        ended_at: "2026-05-11T00:02:00.000Z",
+        error_message: "Previous failure.",
+        session_id: sessionId
+      });
+
+      expect(
+        updateDispatchAttemptStatus(db, {
+          id: "attempt_019e1500-0001-7000-8000-000000000001",
+          status: "running",
+          endedAt: null,
+          errorMessage: null,
+          sessionId: null
+        })
+      ).toBe(1);
+      expect(listDispatchAttemptsForRun(db, runId)[0]).toMatchObject({
+        status: "running",
+        ended_at: null,
+        error_message: null,
+        session_id: null
+      });
+      expect(
+        updateDispatchRunStatus(db, {
+          id: runId,
+          status: "running",
+          updatedAt: "2026-05-11T00:04:00.000Z",
+          finishedAt: null
+        })
+      ).toBe(1);
+      expect(getDispatchRunById(db, runId)).toMatchObject({
+        updated_at: "2026-05-11T00:04:00.000Z",
+        finished_at: null
+      });
+    } finally {
+      db.close();
+    }
+  });
+
+  test("rejects dispatch events whose attempt belongs to another run", () => {
+    const db = openTempDatabase();
+
+    try {
+      const runId = insertRun(db, "run_019e1500-0000-7000-8000-000000000001");
+      const otherRunId = insertRun(db, "run_019e1500-0000-7000-8000-000000000002");
+      expect(
+        insertDispatchAttempt(db, {
+          id: "attempt_019e1500-0001-7000-8000-000000000001",
+          runId: otherRunId,
+          attemptNumber: 1,
+          status: "streaming_turn",
+          tool: "codex"
+        })
+      ).toBe(1);
+      expect(
+        insertDispatchEvent(db, {
+          id: "evt_019e1500-0002-7000-8000-000000000001",
+          runId,
+          ts: baseTs,
+          type: "queued",
+          message: "Run-level event.",
+          dataJson: "{}"
+        })
+      ).toBe(1);
+      expect(
+        insertDispatchAttempt(db, {
+          id: "attempt_019e1500-0001-7000-8000-000000000002",
+          runId,
+          attemptNumber: 2,
+          status: "streaming_turn",
+          tool: "codex"
+        })
+      ).toBe(1);
+      expect(
+        insertDispatchEvent(db, {
+          id: "evt_019e1500-0003-7000-8000-000000000002",
+          runId,
+          attemptId: "attempt_019e1500-0001-7000-8000-000000000002",
+          ts: "2026-05-11T00:00:30.000Z",
+          type: "attempt_started",
+          message: "Valid attempt event.",
+          dataJson: "{}"
+        })
+      ).toBe(1);
+
+      expect(() =>
+        insertDispatchEvent(db, {
+          id: "evt_019e1500-0003-7000-8000-000000000001",
+          runId,
+          attemptId: "attempt_019e1500-0001-7000-8000-000000000001",
+          ts: "2026-05-11T00:01:00.000Z",
+          type: "attempt_started",
+          message: "Invalid cross-run event.",
+          dataJson: "{}"
+        })
+      ).toThrow("dispatch_events attempt_id must belong to run_id");
+      expect(() =>
+        runSql(db, "UPDATE dispatch_events SET attempt_id = ? WHERE id = ?", [
+          "attempt_019e1500-0001-7000-8000-000000000001",
+          "evt_019e1500-0002-7000-8000-000000000001"
+        ])
+      ).toThrow("dispatch_events attempt_id must belong to run_id");
+      expect(() =>
+        runSql(db, "UPDATE dispatch_attempts SET run_id = ? WHERE id = ?", [
+          otherRunId,
+          "attempt_019e1500-0001-7000-8000-000000000002"
+        ])
+      ).toThrow("dispatch_attempts run_id cannot orphan existing dispatch_events");
+    } finally {
+      db.close();
+    }
+  });
+
   test("enforces run attempt uniqueness and foreign key behavior", () => {
     const db = openTempDatabase();
 
