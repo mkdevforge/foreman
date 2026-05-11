@@ -74,10 +74,11 @@ export function insertDispatchRun(db: Database, input: InsertDispatchRunInput): 
 
 export function updateDispatchRunStatus(
   db: Database,
-  input: { id: string; status: string; updatedAt: string; finishedAt?: string | null }
+  input: { id: string; status: string; updatedAt: string; finishedAt?: string | null; expectedStatus?: string }
 ): number {
   const assignments = ["status = ?", "updated_at = ?"];
   const params: SQLQueryBindings[] = [input.status, input.updatedAt];
+  const whereClauses = ["id = ?"];
 
   if ("finishedAt" in input) {
     assignments.push("finished_at = ?");
@@ -85,7 +86,13 @@ export function updateDispatchRunStatus(
   }
 
   params.push(input.id);
-  return runSql(db, `UPDATE dispatch_runs SET ${assignments.join(", ")} WHERE id = ?`, params);
+
+  if (input.expectedStatus !== undefined) {
+    whereClauses.push("status = ?");
+    params.push(input.expectedStatus);
+  }
+
+  return runSql(db, `UPDATE dispatch_runs SET ${assignments.join(", ")} WHERE ${whereClauses.join(" AND ")}`, params);
 }
 
 export function insertDispatchAttempt(db: Database, input: InsertDispatchAttemptInput): number {

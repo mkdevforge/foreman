@@ -5,7 +5,7 @@ source_ref: null
 description: Add local SQLite persistence for future Foreman dispatch runs before implementing runner behavior.
 status: doing
 created_at: 2026-05-11T00:45:35.283Z
-updated_at: 2026-05-11T19:04:24.859Z
+updated_at: 2026-05-11T19:16:15.867Z
 chunks:
   - id: sqlite-dispatch-schema
     title: SQLite dispatch schema
@@ -239,7 +239,7 @@ chunks:
     status: doing
     stage: review
     created_at: 2026-05-11T18:58:42.722Z
-    updated_at: 2026-05-11T19:04:24.859Z
+    updated_at: 2026-05-11T19:16:15.867Z
     notes:
       - ts: 2026-05-11T19:04:21.489Z
         body: "Implemented dispatch claim: foreman dispatch claim now validates claude-code/codex tools,
@@ -247,6 +247,11 @@ chunks:
           records the selected tool in a claimed event, rejects non-queued runs without mutation,
           and keeps attempts/worktrees/agent launch out of scope. Verified with build, focused
           tests, full suite, and a real dogfood queued-to-claimed run."
+      - ts: 2026-05-11T19:16:15.867Z
+        body: "Addressed review finding: claim now uses a conditional status update so only the winner of
+          queued-to-claimed writes the claimed event. If the row leaves queued between the initial
+          read and update, claim returns not_claimable and preserves the existing events. Added a
+          regression covering that lost-claim path."
     dispatch:
       status: ready
       risk_level: low

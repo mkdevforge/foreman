@@ -41,11 +41,19 @@ export function claimQueuedDispatchRun(
     }
 
     const timestamp = now();
-    updateDispatchRunStatus(db, {
+    const updated = updateDispatchRunStatus(db, {
       id: runId,
       status: "claimed",
-      updatedAt: timestamp
+      updatedAt: timestamp,
+      expectedStatus: "queued"
     });
+
+    if (updated !== 1) {
+      const detail = getDispatchRunDetailById(db, runId);
+      return detail === null
+        ? ({ kind: "missing" } satisfies ClaimDispatchRunResult)
+        : ({ kind: "not_claimable", detail } satisfies ClaimDispatchRunResult);
+    }
 
     insertDispatchEvent(db, {
       id: `evt_${idGenerator()}`,

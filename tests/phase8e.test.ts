@@ -5,7 +5,9 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse, stringify } from "yaml";
 import { openForemanDatabase } from "../src/db/client";
+import { getDispatchRunDetailById } from "../src/db/dispatch-queries";
 import { insertDispatchEvent, insertDispatchRun } from "../src/db/dispatch-writes";
+import { claimQueuedDispatchRun } from "../src/dispatch/claim";
 
 const repoRoot = fileURLToPath(new URL("../", import.meta.url));
 const foremanBin = join(repoRoot, "foreman");
@@ -101,6 +103,39 @@ describe("Phase 8e dispatch claim CLI", () => {
     );
     expect(shownQueued.dispatch_run.status).toBe("queued");
     expect(shownQueued.dispatch_run.events.map((event: any) => event.type)).toEqual(["queued"]);
+  });
+
+  test("does not append a claim event when the queued status is lost before the conditional update", () => {
+    const homeDir = createTempDir();
+    const runId = "run_019f8000-0000-7000-8000-000000000003";
+    seedRun(homeDir, { id: runId, status: "queued" });
+    const db = openForemanDatabase({ homeDir });
+
+    try {
+      const result = claimQueuedDispatchRun(db, runId, {
+        tool: "codex",
+        idGenerator: () => "019f8000-0000-7000-8000-000000000004",
+        now: () => {
+          db.prepare("UPDATE dispatch_runs SET status = ?, updated_at = ? WHERE id = ?").run(
+            "running",
+            "2026-05-11T19:00:02.000Z",
+            runId
+          );
+          return "2026-05-11T19:00:03.000Z";
+        }
+      });
+
+      expect(result.kind).toBe("not_claimable");
+      if (result.kind === "not_claimable") {
+        expect(result.detail.run.status).toBe("running");
+      }
+
+      const detail = getDispatchRunDetailById(db, runId);
+      expect(detail?.run.status).toBe("running");
+      expect(detail?.events.map((event) => event.type)).toEqual(["queued"]);
+    } finally {
+      db.close();
+    }
   });
 
   test("reports missing and ambiguous claim targets", () => {
