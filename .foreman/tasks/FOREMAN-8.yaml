@@ -5,7 +5,7 @@ source_ref: null
 description: Add local SQLite persistence for future Foreman dispatch runs before implementing runner behavior.
 status: doing
 created_at: 2026-05-11T00:45:35.283Z
-updated_at: 2026-05-11T18:42:53.277Z
+updated_at: 2026-05-11T18:52:06.472Z
 chunks:
   - id: sqlite-dispatch-schema
     title: SQLite dispatch schema
@@ -183,10 +183,10 @@ chunks:
 
       - Invalid status, missing ID, and ambiguous prefix failures are explicit and do not mutate
       rows.
-    status: review
+    status: done
     stage: review
     created_at: 2026-05-11T18:38:52.402Z
-    updated_at: 2026-05-11T18:42:53.277Z
+    updated_at: 2026-05-11T18:52:06.472Z
     notes:
       - ts: 2026-05-11T18:42:46.012Z
         body: "Implemented queued dispatch cancellation: foreman dispatch cancel resolves exact IDs or
