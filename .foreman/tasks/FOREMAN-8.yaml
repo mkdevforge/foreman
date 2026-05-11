@@ -5,7 +5,7 @@ source_ref: null
 description: Add local SQLite persistence for future Foreman dispatch runs before implementing runner behavior.
 status: doing
 created_at: 2026-05-11T00:45:35.283Z
-updated_at: 2026-05-11T17:45:41.852Z
+updated_at: 2026-05-11T18:42:53.277Z
 chunks:
   - id: sqlite-dispatch-schema
     title: SQLite dispatch schema
@@ -131,10 +131,10 @@ chunks:
 
       - Not-ready chunks fail before any run rows are inserted, with actionable blockers in the
       error payload.
-    status: review
+    status: done
     stage: review
     created_at: 2026-05-11T17:38:06.000Z
-    updated_at: 2026-05-11T17:45:41.852Z
+    updated_at: 2026-05-11T18:38:52.402Z
     notes:
       - ts: 2026-05-11T17:45:41.852Z
         body: "Implemented queued dispatch creation: foreman dispatch create now validates readiness,
@@ -142,6 +142,58 @@ chunks:
           returns UI-oriented JSON with readiness details, and leaves agent
           launch/worktrees/attempts out of scope. Verified with build, focused tests, full suite,
           and a real dogfood queued run."
+    dispatch:
+      status: ready
+      risk_level: low
+      approval_required: none
+      allowed_actions:
+        - edit_source
+        - run_tests
+      blocked_actions:
+        - launch_runner
+  - id: dispatch-cancel-command
+    title: Dispatch cancel command
+    spec: >
+      Add the first dispatch run control command by allowing queued dispatch runs to be canceled
+      before any runner or worktree exists.
+
+
+      Scope:
+
+      - Add `foreman dispatch cancel <run-id-or-prefix>`.
+
+      - Resolve run IDs by exact ID or unique prefix.
+
+      - Allow canceling runs in `queued` status.
+
+      - Treat already-canceled runs as successful no-ops without appending duplicate events.
+
+      - Update the run to `canceled`, set `updated_at` and `finished_at`, and append a run-level
+      `canceled` event transactionally.
+
+      - Return stable JSON with the updated dispatch run detail.
+
+      - Do not launch agents, create worktrees, create attempts, or mutate task YAML in this slice.
+
+
+      Expected outcome:
+
+      - A queued dispatch run can be safely removed from future runner consideration while keeping
+      an auditable local SQLite record.
+
+      - Invalid status, missing ID, and ambiguous prefix failures are explicit and do not mutate
+      rows.
+    status: review
+    stage: review
+    created_at: 2026-05-11T18:38:52.402Z
+    updated_at: 2026-05-11T18:42:53.277Z
+    notes:
+      - ts: 2026-05-11T18:42:46.012Z
+        body: "Implemented queued dispatch cancellation: foreman dispatch cancel resolves exact IDs or
+          unique prefixes, cancels queued runs transactionally with one canceled event, treats
+          already-canceled runs as no-op success, rejects non-queued live/terminal statuses without
+          mutation, and keeps runner/worktree/attempt behavior out of scope. Verified with build,
+          focused tests, and dogfooding against the queued run from the previous slice."
     dispatch:
       status: ready
       risk_level: low

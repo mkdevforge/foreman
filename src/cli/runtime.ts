@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { CliError, type ExitCode } from "./errors";
 import { formatJsonData, formatJsonError, renderTextError } from "./output";
 import { openForemanDatabase } from "../db/client";
+import { cancelQueuedDispatchRun, type CancelDispatchRunResult } from "../dispatch/cancel";
 import { createQueuedDispatchRun } from "../dispatch/create";
 import {
   getDispatchRunDetailById,
@@ -653,6 +654,31 @@ function createDispatchCommand(json: boolean, io: CliIo): Command {
       });
     });
 
+  configureCommand(dispatch.command("cancel"), io)
+    .description("Cancel a queued dispatch run.")
+    .argument("<run-id-or-prefix>")
+    .action((prefix: string) => {
+      const result = withForemanDatabase((db) => cancelQueuedDispatchRun(db, resolveDispatchRunIdOrThrow(db, prefix)));
+
+      if (result.kind === "missing") {
+        throw new CliError(1, "dispatch_run_not_found", `dispatch run '${prefix}' was not found`);
+      }
+
+      if (result.kind === "not_cancelable") {
+        throw new CliError(
+          2,
+          "dispatch_run_not_cancelable",
+          `dispatch run '${result.detail.run.id}' has status '${result.detail.run.status}' and cannot be canceled; expected queued`,
+          { dispatch_run: toJsonDispatchRunDetail(result.detail) }
+        );
+      }
+
+      writeData(json, io, renderDispatchCancel(result), {
+        dispatch_run: toJsonDispatchRunDetail(result.detail),
+        changed: result.kind === "canceled"
+      });
+    });
+
   configureCommand(dispatch.command("list"), io)
     .description("List persisted dispatch runs.")
     .option("--task <id>")
@@ -669,21 +695,7 @@ function createDispatchCommand(json: boolean, io: CliIo): Command {
     .argument("<run-id-or-prefix>")
     .action((prefix: string) => {
       const run = withForemanDatabase((db) => {
-        const resolved = resolveDispatchRunPrefix(db, prefix);
-
-        if (resolved.kind === "missing") {
-          throw new CliError(1, "dispatch_run_not_found", `dispatch run '${prefix}' was not found`);
-        }
-
-        if (resolved.kind === "ambiguous") {
-          throw new CliError(
-            1,
-            "ambiguous_dispatch_run_prefix",
-            `dispatch run prefix '${prefix}' is ambiguous; candidates: ${resolved.candidates.join(", ")}`
-          );
-        }
-
-        return getDispatchRunDetailById(db, resolved.id);
+        return getDispatchRunDetailById(db, resolveDispatchRunIdOrThrow(db, prefix));
       });
 
       if (run === null) {
@@ -694,6 +706,24 @@ function createDispatchCommand(json: boolean, io: CliIo): Command {
     });
 
   return dispatch;
+}
+
+function resolveDispatchRunIdOrThrow(db: Database, prefix: string): string {
+  const resolved = resolveDispatchRunPrefix(db, prefix);
+
+  if (resolved.kind === "missing") {
+    throw new CliError(1, "dispatch_run_not_found", `dispatch run '${prefix}' was not found`);
+  }
+
+  if (resolved.kind === "ambiguous") {
+    throw new CliError(
+      1,
+      "ambiguous_dispatch_run_prefix",
+      `dispatch run prefix '${prefix}' is ambiguous; candidates: ${resolved.candidates.join(", ")}`
+    );
+  }
+
+  return resolved.id;
 }
 
 function createSessionCommand(json: boolean, io: CliIo): Command {
@@ -2021,6 +2051,16 @@ function renderDispatchCreate(detail: DispatchRunDetail): string {
     `Status: ${run.status}`,
     ""
   ].join("\n");
+}
+
+function renderDispatchCancel(result: Exclude<CancelDispatchRunResult, { kind: "missing" | "not_cancelable" }>): string {
+  const run = result.detail.run;
+
+  if (result.kind === "already_canceled") {
+    return `Dispatch run ${run.id} was already canceled.\n`;
+  }
+
+  return `Canceled dispatch run ${run.id}.\n`;
 }
 
 function renderDispatchRunShow(detail: DispatchRunDetail): string {

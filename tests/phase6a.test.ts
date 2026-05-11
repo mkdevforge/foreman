@@ -71,7 +71,14 @@ describe("Phase 6a automated acceptance hardening", () => {
     expectJsonCommand(repo, homeDir, ["work", "FOREMAN-1/api", "--stage", "review"], ["active"]);
     expectJsonCommand(repo, homeDir, ["status"], ["active", "stale", "stale_after_hours", "invalid"]);
     expectJsonCommand(repo, homeDir, ["stop"], ["active", "cleared"]);
-    expectJsonCommand(repo, homeDir, ["dispatch", "create", "FOREMAN-1/api"], ["dispatch_run", "readiness"]);
+    const createdDispatchRun = expectJsonCommand(repo, homeDir, ["dispatch", "create", "FOREMAN-1/api"], [
+      "dispatch_run",
+      "readiness"
+    ]);
+    expectJsonCommand(repo, homeDir, ["dispatch", "cancel", createdDispatchRun.dispatch_run.id], [
+      "dispatch_run",
+      "changed"
+    ]);
 
     seedAcceptanceSessions(homeDir, repo);
     seedAcceptanceDispatchRuns(homeDir);
