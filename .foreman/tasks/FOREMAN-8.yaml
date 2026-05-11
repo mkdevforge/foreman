@@ -5,7 +5,7 @@ source_ref: null
 description: Add local SQLite persistence for future Foreman dispatch runs before implementing runner behavior.
 status: doing
 created_at: 2026-05-11T00:45:35.283Z
-updated_at: 2026-05-11T18:52:06.472Z
+updated_at: 2026-05-11T19:04:24.859Z
 chunks:
   - id: sqlite-dispatch-schema
     title: SQLite dispatch schema
@@ -194,6 +194,59 @@ chunks:
           already-canceled runs as no-op success, rejects non-queued live/terminal statuses without
           mutation, and keeps runner/worktree/attempt behavior out of scope. Verified with build,
           focused tests, and dogfooding against the queued run from the previous slice."
+    dispatch:
+      status: ready
+      risk_level: low
+      approval_required: none
+      allowed_actions:
+        - edit_source
+        - run_tests
+      blocked_actions:
+        - launch_runner
+  - id: dispatch-claim-command
+    title: Dispatch claim command
+    spec: >
+      Add a minimal runner-adjacent claim step for queued dispatch runs without creating attempts,
+      worktrees, or launching agents.
+
+
+      Scope:
+
+      - Add `foreman dispatch claim <run-id-or-prefix> --tool <claude-code|codex>`.
+
+      - Resolve run IDs by exact ID or unique prefix.
+
+      - Allow claiming runs only in `queued` status.
+
+      - Update the run to `claimed`, set `updated_at`, and append a run-level `claimed` event
+      transactionally.
+
+      - Store the selected tool in the claimed event data.
+
+      - Return stable JSON with the updated dispatch run detail.
+
+      - Do not create dispatch attempts, create worktrees, launch agents, mutate task YAML, or
+      stop/cancel live work in this slice.
+
+
+      Expected outcome:
+
+      - A queued dispatch run can be moved out of the queue as a local runner preparation step while
+      preserving an auditable event trail.
+
+      - Invalid status, missing ID, ambiguous prefixes, and invalid tools are explicit and do not
+      mutate rows.
+    status: doing
+    stage: review
+    created_at: 2026-05-11T18:58:42.722Z
+    updated_at: 2026-05-11T19:04:24.859Z
+    notes:
+      - ts: 2026-05-11T19:04:21.489Z
+        body: "Implemented dispatch claim: foreman dispatch claim now validates claude-code/codex tools,
+          resolves exact IDs or unique prefixes, transitions queued runs to claimed transactionally,
+          records the selected tool in a claimed event, rejects non-queued runs without mutation,
+          and keeps attempts/worktrees/agent launch out of scope. Verified with build, focused
+          tests, full suite, and a real dogfood queued-to-claimed run."
     dispatch:
       status: ready
       risk_level: low

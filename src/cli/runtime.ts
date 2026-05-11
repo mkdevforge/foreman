@@ -6,6 +6,12 @@ import { CliError, type ExitCode } from "./errors";
 import { formatJsonData, formatJsonError, renderTextError } from "./output";
 import { openForemanDatabase } from "../db/client";
 import { cancelQueuedDispatchRun, type CancelDispatchRunResult } from "../dispatch/cancel";
+import {
+  claimQueuedDispatchRun,
+  DISPATCH_TOOLS,
+  type ClaimDispatchRunResult,
+  type DispatchTool
+} from "../dispatch/claim";
 import { createQueuedDispatchRun } from "../dispatch/create";
 import {
   getDispatchRunDetailById,
@@ -609,7 +615,7 @@ function createCatalogCommand(json: boolean, io: CliIo): Command {
 
 function createDispatchCommand(json: boolean, io: CliIo): Command {
   const dispatch = configureCommand(new Command("dispatch"), io)
-    .description("Create and query persisted dispatch runs.")
+    .description("Create, claim, cancel, and query persisted dispatch runs.")
     .action(() => {
       throw new CliError(2, "missing_command", "missing dispatch command");
     });
@@ -651,6 +657,35 @@ function createDispatchCommand(json: boolean, io: CliIo): Command {
       writeData(json, io, renderDispatchCreate(run), {
         dispatch_run: toJsonDispatchRunDetail(run),
         readiness: toJsonChunkReadiness(readiness)
+      });
+    });
+
+  configureCommand(dispatch.command("claim"), io)
+    .description("Claim a queued dispatch run for a local agent tool.")
+    .argument("<run-id-or-prefix>")
+    .requiredOption("--tool <tool>", "claude-code or codex")
+    .action((prefix: string, options: { tool: string }) => {
+      const tool = parseDispatchTool(options.tool);
+      const result = withForemanDatabase((db) =>
+        claimQueuedDispatchRun(db, resolveDispatchRunIdOrThrow(db, prefix), { tool })
+      );
+
+      if (result.kind === "missing") {
+        throw new CliError(1, "dispatch_run_not_found", `dispatch run '${prefix}' was not found`);
+      }
+
+      if (result.kind === "not_claimable") {
+        throw new CliError(
+          2,
+          "dispatch_run_not_claimable",
+          `dispatch run '${result.detail.run.id}' has status '${result.detail.run.status}' and cannot be claimed; expected queued`,
+          { dispatch_run: toJsonDispatchRunDetail(result.detail) }
+        );
+      }
+
+      writeData(json, io, renderDispatchClaim(result), {
+        dispatch_run: toJsonDispatchRunDetail(result.detail),
+        changed: true
       });
     });
 
@@ -724,6 +759,14 @@ function resolveDispatchRunIdOrThrow(db: Database, prefix: string): string {
   }
 
   return resolved.id;
+}
+
+function parseDispatchTool(value: string): DispatchTool {
+  if (!DISPATCH_TOOLS.includes(value as DispatchTool)) {
+    throw new CliError(2, "invalid_tool", `invalid tool '${value}'; expected one of claude-code, codex`);
+  }
+
+  return value as DispatchTool;
 }
 
 function createSessionCommand(json: boolean, io: CliIo): Command {
@@ -2061,6 +2104,10 @@ function renderDispatchCancel(result: Exclude<CancelDispatchRunResult, { kind: "
   }
 
   return `Canceled dispatch run ${run.id}.\n`;
+}
+
+function renderDispatchClaim(result: Exclude<ClaimDispatchRunResult, { kind: "missing" | "not_claimable" }>): string {
+  return `Claimed dispatch run ${result.detail.run.id}.\n`;
 }
 
 function renderDispatchRunShow(detail: DispatchRunDetail): string {
