@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
 
-export const FOREMAN_DB_SCHEMA_VERSION = 1;
+export const FOREMAN_DB_SCHEMA_VERSION = 2;
 
 const MIGRATION_1_STATEMENTS = [
   `CREATE TABLE sessions (
@@ -66,6 +66,55 @@ const MIGRATION_1_STATEMENTS = [
     PRIMARY KEY (session_id, task_id, chunk_id)
   )`,
   "CREATE INDEX idx_session_chunks_task ON session_chunks(task_id, chunk_id)",
+  "PRAGMA user_version = 1"
+] as const;
+
+const MIGRATION_2_STATEMENTS = [
+  `CREATE TABLE dispatch_runs (
+    id                TEXT PRIMARY KEY,
+    task_id           TEXT NOT NULL,
+    chunk_id          TEXT NOT NULL,
+    requested_stage   TEXT NOT NULL,
+    status            TEXT NOT NULL,
+    requested_by      TEXT,
+    source            TEXT NOT NULL,
+    created_at        TEXT NOT NULL,
+    updated_at        TEXT NOT NULL,
+    finished_at       TEXT
+  )`,
+  "CREATE INDEX idx_dispatch_runs_chunk ON dispatch_runs(task_id, chunk_id)",
+  "CREATE INDEX idx_dispatch_runs_status ON dispatch_runs(status)",
+  "CREATE INDEX idx_dispatch_runs_created ON dispatch_runs(created_at DESC)",
+  `CREATE TABLE dispatch_attempts (
+    id                TEXT PRIMARY KEY,
+    run_id            TEXT NOT NULL REFERENCES dispatch_runs(id) ON DELETE CASCADE,
+    attempt_number    INTEGER NOT NULL,
+    status            TEXT NOT NULL,
+    tool              TEXT NOT NULL,
+    workspace_path    TEXT,
+    worktree_branch   TEXT,
+    process_id        INTEGER,
+    started_at        TEXT,
+    ended_at          TEXT,
+    error_message     TEXT,
+    session_id        TEXT REFERENCES sessions(id) ON DELETE SET NULL,
+    UNIQUE (run_id, attempt_number)
+  )`,
+  "CREATE INDEX idx_dispatch_attempts_run ON dispatch_attempts(run_id)",
+  "CREATE INDEX idx_dispatch_attempts_session ON dispatch_attempts(session_id)",
+  "CREATE INDEX idx_dispatch_attempts_status ON dispatch_attempts(status)",
+  `CREATE TABLE dispatch_events (
+    id          TEXT PRIMARY KEY,
+    run_id      TEXT NOT NULL REFERENCES dispatch_runs(id) ON DELETE CASCADE,
+    attempt_id  TEXT REFERENCES dispatch_attempts(id) ON DELETE SET NULL,
+    ts          TEXT NOT NULL,
+    type        TEXT NOT NULL,
+    message     TEXT NOT NULL,
+    data_json   TEXT NOT NULL
+  )`,
+  "CREATE INDEX idx_dispatch_events_run_ts ON dispatch_events(run_id, ts ASC, id ASC)",
+  "CREATE INDEX idx_dispatch_events_attempt_ts ON dispatch_events(attempt_id, ts ASC, id ASC)",
+  "CREATE INDEX idx_dispatch_events_type ON dispatch_events(type)",
   `PRAGMA user_version = ${FOREMAN_DB_SCHEMA_VERSION}`
 ] as const;
 
@@ -75,7 +124,7 @@ export function applyConnectionPragmas(db: Database): void {
 }
 
 export function migrateDatabaseSchema(db: Database): void {
-  const currentVersion = getUserVersion(db);
+  let currentVersion = getUserVersion(db);
 
   if (currentVersion > FOREMAN_DB_SCHEMA_VERSION) {
     throw new Error(
@@ -83,8 +132,13 @@ export function migrateDatabaseSchema(db: Database): void {
     );
   }
 
-  if (currentVersion === 0) {
+  if (currentVersion < 1) {
     applyMigration1(db);
+    currentVersion = getUserVersion(db);
+  }
+
+  if (currentVersion < 2) {
+    applyMigration2(db);
   }
 
   const migratedVersion = getUserVersion(db);
@@ -108,6 +162,16 @@ export function getUserVersion(db: Database): number {
 function applyMigration1(db: Database): void {
   const migration = db.transaction(() => {
     for (const statement of MIGRATION_1_STATEMENTS) {
+      db.run(statement);
+    }
+  });
+
+  migration.immediate();
+}
+
+function applyMigration2(db: Database): void {
+  const migration = db.transaction(() => {
+    for (const statement of MIGRATION_2_STATEMENTS) {
       db.run(statement);
     }
   });

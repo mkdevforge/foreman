@@ -1,0 +1,81 @@
+schema_version: 1
+id: FOREMAN-8
+title: Dispatch persistence foundation
+source_ref: null
+description: Add local SQLite persistence for future Foreman dispatch runs before implementing runner behavior.
+status: doing
+created_at: 2026-05-11T00:45:35.283Z
+updated_at: 2026-05-11T00:53:42.980Z
+chunks:
+  - id: sqlite-dispatch-schema
+    title: SQLite dispatch schema
+    spec: >
+      Add the local SQLite persistence foundation for future dispatch runs.
+
+
+      Scope:
+
+      - Add database schema version 2.
+
+      - Add `dispatch_runs`, `dispatch_attempts`, and `dispatch_events` tables.
+
+      - Preserve migration from existing schema version 1 databases.
+
+      - Add low-level write helpers for runs, attempts, and events.
+
+      - Add low-level query helpers for runs, attempts, and events.
+
+      - Keep this slice below the CLI and runner layers: no command surface, no worktree creation,
+      no Claude/Codex launch.
+
+
+      Expected outcome:
+
+      - Future dispatch commands have a tested local storage model before they create or launch
+      runs.
+
+      - Dispatch attempts can later link to captured sessions without changing existing
+      `session_chunks` semantics.
+
+      - Tests cover fresh schema creation, v1-to-v2 migration, constraints, cascades/nulling, and
+      helper round-trips.
+    status: review
+    stage: review
+    created_at: 2026-05-11T00:45:39.060Z
+    updated_at: 2026-05-11T00:53:42.980Z
+    notes:
+      - ts: 2026-05-11T00:53:39.926Z
+        body: "Implemented schema v2 dispatch persistence: dispatch_runs, dispatch_attempts,
+          dispatch_events, low-level write/query helpers, v1 migration coverage, helper round-trip
+          tests, and docs alignment. No runner, worktree creation, or dispatch CLI launch behavior
+          added in this slice."
+    dispatch:
+      status: ready
+      risk_level: low
+      approval_required: none
+      allowed_actions:
+        - edit_source
+        - run_tests
+      blocked_actions:
+        - launch_runner
+  - id: dispatch-query-surface
+    title: Dispatch query surface
+    spec: >
+      Add a user-facing read-only query surface for persisted dispatch runs after the SQLite
+      persistence foundation lands.
+
+
+      Scope:
+
+      - Add commands to list and show dispatch runs.
+
+      - Expose run, attempt, event, and linked session data in stable JSON.
+
+      - Keep output useful for the future UI.
+
+      - Do not launch agents or create worktrees in this slice.
+    status: todo
+    stage: discovery
+    created_at: 2026-05-11T00:45:43.076Z
+    updated_at: 2026-05-11T00:45:43.076Z
+    notes: []

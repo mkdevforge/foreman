@@ -256,4 +256,4 @@ Stop hooks intentionally exit `0` after non-help execution, including parse and 
 - Session summaries depend on the configured local Claude Code/Codex harness and may be absent if summary generation fails.
 - `cost_usd` is an estimate, not a billing source of truth.
 - Catalog matching depends on stored `repo_remote` or exact `project_path`; it does not infer related worktrees without a shared remote.
-- The SQLite schema has a single v0 migration and no cross-machine sync.
+- The SQLite schema has local migrations and no cross-machine sync.

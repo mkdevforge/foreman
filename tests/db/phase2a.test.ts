@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import type { Database, SQLQueryBindings } from "bun:sqlite";
+import { Database, type SQLQueryBindings } from "bun:sqlite";
 import { existsSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -9,8 +9,27 @@ import { FOREMAN_DB_SCHEMA_VERSION, getUserVersion } from "../../src/db/schema";
 const tempDirs: string[] = [];
 const baseTs = "2026-05-06T00:00:00.000Z";
 
-const expectedTables = ["prompts", "session_chunks", "sessions", "summaries", "tool_calls", "usage"];
+const expectedTables = [
+  "dispatch_attempts",
+  "dispatch_events",
+  "dispatch_runs",
+  "prompts",
+  "session_chunks",
+  "sessions",
+  "summaries",
+  "tool_calls",
+  "usage"
+];
 const expectedIndexes = [
+  "idx_dispatch_attempts_run",
+  "idx_dispatch_attempts_session",
+  "idx_dispatch_attempts_status",
+  "idx_dispatch_events_attempt_ts",
+  "idx_dispatch_events_run_ts",
+  "idx_dispatch_events_type",
+  "idx_dispatch_runs_chunk",
+  "idx_dispatch_runs_created",
+  "idx_dispatch_runs_status",
   "idx_prompts_session",
   "idx_session_chunks_task",
   "idx_sessions_project",
@@ -182,6 +201,91 @@ function seedSessionChunk(db: Database, sessionId: string, input: SeedSessionChu
   );
 }
 
+function createLegacyVersion1Database(path: string): void {
+  const db = new Database(path, {
+    create: true,
+    readwrite: true,
+    strict: true
+  });
+
+  try {
+    const statements = [
+      `CREATE TABLE sessions (
+        id                  TEXT PRIMARY KEY,
+        source              TEXT NOT NULL,
+        source_session_id   TEXT NOT NULL,
+        started_at          TEXT NOT NULL,
+        ended_at            TEXT NOT NULL,
+        project_path        TEXT NOT NULL,
+        repo_remote         TEXT,
+        model               TEXT,
+        machine             TEXT NOT NULL,
+        user_email          TEXT NOT NULL,
+        created_at          TEXT NOT NULL,
+        UNIQUE (source, source_session_id)
+      )`,
+      "CREATE INDEX idx_sessions_started ON sessions(started_at DESC)",
+      "CREATE INDEX idx_sessions_project ON sessions(project_path)",
+      "CREATE INDEX idx_sessions_source ON sessions(source)",
+      `CREATE TABLE prompts (
+        id            TEXT PRIMARY KEY,
+        session_id    TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        ts            TEXT NOT NULL,
+        content       TEXT NOT NULL,
+        content_hash  TEXT NOT NULL,
+        UNIQUE (session_id, content_hash, ts)
+      )`,
+      "CREATE INDEX idx_prompts_session ON prompts(session_id)",
+      `CREATE TABLE tool_calls (
+        id            TEXT PRIMARY KEY,
+        session_id    TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        ts            TEXT NOT NULL,
+        tool_name     TEXT NOT NULL,
+        params_json   TEXT NOT NULL,
+        result_json   TEXT,
+        is_error      INTEGER NOT NULL DEFAULT 0,
+        params_hash   TEXT NOT NULL,
+        UNIQUE (session_id, params_hash, ts)
+      )`,
+      "CREATE INDEX idx_tool_calls_session ON tool_calls(session_id)",
+      "CREATE INDEX idx_tool_calls_tool ON tool_calls(tool_name)",
+      `CREATE TABLE usage (
+        session_id              TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+        input_tokens            INTEGER NOT NULL DEFAULT 0,
+        output_tokens           INTEGER NOT NULL DEFAULT 0,
+        cache_read_tokens       INTEGER NOT NULL DEFAULT 0,
+        cache_creation_tokens   INTEGER NOT NULL DEFAULT 0,
+        cost_usd                REAL    NOT NULL DEFAULT 0
+      )`,
+      `CREATE TABLE summaries (
+        session_id    TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+        summary_md    TEXT NOT NULL,
+        model_used    TEXT NOT NULL,
+        generated_at  TEXT NOT NULL
+      )`,
+      `CREATE TABLE session_chunks (
+        session_id    TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        task_id       TEXT NOT NULL,
+        chunk_id      TEXT NOT NULL,
+        stage         TEXT NOT NULL,
+        linked_at     TEXT NOT NULL,
+        linked_by     TEXT NOT NULL,
+        PRIMARY KEY (session_id, task_id, chunk_id)
+      )`,
+      "CREATE INDEX idx_session_chunks_task ON session_chunks(task_id, chunk_id)"
+    ];
+
+    for (const statement of statements) {
+      runSql(db, statement);
+    }
+
+    seedSession(db, { id: "legacy-session" });
+    runSql(db, "PRAGMA user_version = 1");
+  } finally {
+    db.close();
+  }
+}
+
 function objectNames(db: Database, type: "table" | "index"): string[] {
   return db
     .query<{ name: string }, [string]>(
@@ -231,7 +335,7 @@ afterEach(() => {
 });
 
 describe("foreman SQLite schema", () => {
-  test("creates and migrates a fresh database to PRD version 1", () => {
+  test("creates and migrates a fresh database to the current schema version", () => {
     const dbPath = join(createTempDir(), "fresh.db");
     const db = openForemanDatabase({ databasePath: dbPath });
 
@@ -268,6 +372,23 @@ describe("foreman SQLite schema", () => {
     try {
       expect(objectNames(db, "table")).toEqual(expectedTables);
       expect(objectNames(db, "index")).toEqual(expectedIndexes);
+    } finally {
+      db.close();
+    }
+  });
+
+  test("migrates an existing version 1 database to version 2 without dropping sessions", () => {
+    const dbPath = join(createTempDir(), "legacy-v1.db");
+    createLegacyVersion1Database(dbPath);
+
+    const db = openForemanDatabase({ databasePath: dbPath });
+
+    try {
+      expect(getUserVersion(db)).toBe(FOREMAN_DB_SCHEMA_VERSION);
+      expect(tableCount(db, "sessions")).toBe(1);
+      expect(objectNames(db, "table")).toContain("dispatch_runs");
+      expect(objectNames(db, "table")).toContain("dispatch_attempts");
+      expect(objectNames(db, "table")).toContain("dispatch_events");
     } finally {
       db.close();
     }

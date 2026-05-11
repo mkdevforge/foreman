@@ -1,6 +1,6 @@
 # Dispatch Run Model
 
-This document records the storage stance for future Foreman dispatch work. It is a design contract, not an implemented runner.
+This document records the storage stance for Foreman dispatch work. It is a storage contract, not an implemented runner.
 
 ## Decision
 
@@ -36,15 +36,15 @@ YAML is still the right place for data that should follow the task through Git h
 - `docs/dispatch-readiness-schema.md` defines dispatch readiness as a chunk-level gate and explicitly keeps future run state out of readiness metadata.
 - `references/symphony/SPEC.md` was used as product/design reference for orchestration concepts such as claimed/running/retry states and explicit run-attempt phases. Foreman should borrow those operational primitives, not copy Symphony's tracker-driven architecture.
 
-## Future SQLite Shape
+## SQLite Shape
 
-The next dispatch implementation should add a new database migration. The exact DDL can change when implemented, but the model should preserve these entities.
+Database schema version 2 adds the dispatch persistence foundation. The runner and user-facing dispatch commands are still future work, but they should build on these entities rather than adding run-attempt fields to YAML.
 
 ### `dispatch_runs`
 
 One logical user request to dispatch a chunk.
 
-Recommended fields:
+Fields:
 
 - `id` prefixed UUIDv7, for example `run_<uuidv7>`
 - `task_id`
@@ -61,7 +61,7 @@ Recommended fields:
 
 One concrete agent launch attempt for a dispatch run.
 
-Recommended fields:
+Fields:
 
 - `id` prefixed UUIDv7, for example `attempt_<uuidv7>`
 - `run_id`
@@ -80,7 +80,7 @@ Recommended fields:
 
 Append-only audit events for debugging and UI timelines.
 
-Recommended fields:
+Fields:
 
 - `id` prefixed UUIDv7, for example `evt_<uuidv7>`
 - `run_id`
@@ -115,11 +115,10 @@ The future UI should use CLI/SQLite-backed JSON surfaces for live run status. It
 
 That split keeps the UI honest about which facts are committed project knowledge and which facts are local machine state.
 
-## Non-Goals For This Slice
+## Non-Goals For The Schema Slice
 
 - No runner command.
 - No background scheduler.
-- No database migration.
 - No worktree creation.
 - No process launching.
 - No YAML run-attempt fields.
