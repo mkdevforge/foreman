@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { Database, SQLQueryBindings } from "bun:sqlite";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parse, stringify } from "yaml";
 import { openForemanDatabase } from "../src/db/client";
 import { insertDispatchAttempt, insertDispatchEvent, insertDispatchRun } from "../src/db/dispatch-writes";
 
@@ -54,6 +55,7 @@ describe("Phase 6a automated acceptance hardening", () => {
       "chunk"
     ]);
     expectJsonCommand(repo, homeDir, ["decision", "list", "FOREMAN-1/api"], ["task_id", "chunk_id", "decisions"]);
+    setDispatchReadiness(repo, "FOREMAN-1");
     expectJsonCommand(repo, homeDir, ["chunk", "ready", "FOREMAN-1/api"], [
       "task_id",
       "chunk_id",
@@ -69,6 +71,7 @@ describe("Phase 6a automated acceptance hardening", () => {
     expectJsonCommand(repo, homeDir, ["work", "FOREMAN-1/api", "--stage", "review"], ["active"]);
     expectJsonCommand(repo, homeDir, ["status"], ["active", "stale", "stale_after_hours", "invalid"]);
     expectJsonCommand(repo, homeDir, ["stop"], ["active", "cleared"]);
+    expectJsonCommand(repo, homeDir, ["dispatch", "create", "FOREMAN-1/api"], ["dispatch_run", "readiness"]);
 
     seedAcceptanceSessions(homeDir, repo);
     seedAcceptanceDispatchRuns(homeDir);
@@ -129,6 +132,19 @@ function expectJsonCommand(cwd: string, homeDir: string, argv: string[], require
   }
 
   return parsed;
+}
+
+function setDispatchReadiness(repo: string, taskId: string): void {
+  const path = join(repo, ".foreman", "tasks", `${taskId}.yaml`);
+  const task = parse(readFileSync(path, "utf8")) as Record<string, any>;
+  task.chunks[0].dispatch = {
+    status: "ready",
+    risk_level: "low",
+    approval_required: "none",
+    allowed_actions: ["edit_source", "run_tests"],
+    blocked_actions: ["launch_runner"]
+  };
+  writeFileSync(path, stringify(task), "utf8");
 }
 
 function seedAcceptanceSessions(homeDir: string, projectPath: string): void {

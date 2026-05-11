@@ -6,6 +6,7 @@ export interface JsonErrorResponse {
     code: string;
     message: string;
     exit_code: number;
+    details?: Record<string, unknown>;
   };
 }
 
@@ -19,7 +20,8 @@ export function formatJsonError(error: CliError): string {
     error: {
       code: error.code,
       message: error.message,
-      exit_code: error.exitCode
+      exit_code: error.exitCode,
+      ...(error.details === undefined ? {} : { details: error.details })
     }
   };
 

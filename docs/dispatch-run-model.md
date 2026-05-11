@@ -38,7 +38,7 @@ YAML is still the right place for data that should follow the task through Git h
 
 ## SQLite Shape
 
-Database schema versions 2 and 3 add the dispatch persistence foundation. The runner is still future work, but the read-only dispatch query surface builds on these entities rather than adding run-attempt fields to YAML.
+Database schema versions 2 and 3 add the dispatch persistence foundation. The runner is still future work, but the dispatch CLI creates queued run records and queries these entities rather than adding run-attempt fields to YAML.
 
 ### `dispatch_runs`
 
@@ -108,12 +108,15 @@ Future dispatch should prefer sibling worktrees for implementation attempts. Wor
 
 Readiness evaluation should run against the control repo's YAML before a dispatch run is created. The attempt workspace can then be created from the same repo remote/branch context.
 
-## Query Surface
+## CLI Surface
 
-The initial user-facing query surface is read-only:
+The initial user-facing dispatch surface is deliberately below the runner layer:
 
+- `foreman dispatch create <task>/<chunk> [--stage <stage>]`
 - `foreman dispatch list [--task <id>] [--chunk <id>] [--status <status>]`
 - `foreman dispatch show <run-id-or-prefix>`
+
+`foreman dispatch create` validates readiness from control-repo YAML first, then atomically inserts one `queued` `dispatch_runs` row and one run-level `queued` event. Requested dispatch stages are `plan`, `implement`, or `review`; `discovery` remains a pre-dispatch stage. The command does not launch agents, create worktrees, create attempts, mutate chunk status, or write run state to YAML.
 
 JSON output exposes stable snake_case run fields plus `attempts` and `events`. Attempt rows include `session_id` and hydrate `session` with the same overview shape used by `foreman session list` when the referenced session is still present.
 
@@ -128,7 +131,7 @@ That split keeps the UI honest about which facts are committed project knowledge
 
 ## Non-Goals For The Schema Slice
 
-- No runner command.
+- No agent-running command.
 - No background scheduler.
 - No worktree creation.
 - No process launching.

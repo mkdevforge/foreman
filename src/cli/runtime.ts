@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { CliError, type ExitCode } from "./errors";
 import { formatJsonData, formatJsonError, renderTextError } from "./output";
 import { openForemanDatabase } from "../db/client";
+import { createQueuedDispatchRun } from "../dispatch/create";
 import {
   getDispatchRunDetailById,
   listDispatchRunDetails,
@@ -607,9 +608,49 @@ function createCatalogCommand(json: boolean, io: CliIo): Command {
 
 function createDispatchCommand(json: boolean, io: CliIo): Command {
   const dispatch = configureCommand(new Command("dispatch"), io)
-    .description("Query persisted dispatch runs.")
+    .description("Create and query persisted dispatch runs.")
     .action(() => {
       throw new CliError(2, "missing_command", "missing dispatch command");
+    });
+
+  configureCommand(dispatch.command("create"), io)
+    .description("Create a queued dispatch run for a ready chunk.")
+    .argument("<task>/<chunk>")
+    .option("--stage <stage>", "requested dispatch stage: plan, implement, or review")
+    .action((ref: string, options: { stage?: string }) => {
+      const controlRepoRoot = findRepoRoot();
+      const chunkRef = parseChunkRef(ref);
+      let requestedStageOverride: ChunkStage | undefined;
+
+      if (options.stage !== undefined) {
+        assertValidChunkStage(options.stage);
+        if (options.stage === "discovery") {
+          throw new CliError(2, "invalid_dispatch_stage", "dispatch requested stage must be plan, implement, or review");
+        }
+        requestedStageOverride = options.stage;
+      }
+
+      const readiness = evaluateChunkReadiness(controlRepoRoot, chunkRef);
+      if (!readiness.ready) {
+        throw new CliError(
+          2,
+          "dispatch_not_ready",
+          `chunk '${ref}' is not ready for dispatch; blockers: ${readiness.blockers.map((blocker) => blocker.code).join(", ")}`,
+          { readiness: toJsonChunkReadiness(readiness) }
+        );
+      }
+
+      const run = withForemanDatabase((db) =>
+        createQueuedDispatchRun(db, chunkRef, {
+          requestedStage: requestedStageOverride ?? readiness.chunk.stage,
+          source: "cli"
+        })
+      );
+
+      writeData(json, io, renderDispatchCreate(run), {
+        dispatch_run: toJsonDispatchRunDetail(run),
+        readiness: toJsonChunkReadiness(readiness)
+      });
     });
 
   configureCommand(dispatch.command("list"), io)
@@ -1969,6 +2010,17 @@ function renderDispatchRunList(runs: DispatchRunDetail[]): string {
   }
 
   return `${runs.map(formatDispatchRunListRow).join("\n")}\n`;
+}
+
+function renderDispatchCreate(detail: DispatchRunDetail): string {
+  const run = detail.run;
+
+  return [
+    `Queued dispatch run ${run.id} for ${run.task_id}/${run.chunk_id}.`,
+    `Requested stage: ${run.requested_stage}`,
+    `Status: ${run.status}`,
+    ""
+  ].join("\n");
 }
 
 function renderDispatchRunShow(detail: DispatchRunDetail): string {

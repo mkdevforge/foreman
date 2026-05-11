@@ -5,7 +5,7 @@ source_ref: null
 description: Add local SQLite persistence for future Foreman dispatch runs before implementing runner behavior.
 status: doing
 created_at: 2026-05-11T00:45:35.283Z
-updated_at: 2026-05-11T15:19:35.068Z
+updated_at: 2026-05-11T17:45:41.852Z
 chunks:
   - id: sqlite-dispatch-schema
     title: SQLite dispatch schema
@@ -79,12 +79,75 @@ chunks:
       - Keep output useful for the future UI.
 
       - Do not launch agents or create worktrees in this slice.
-    status: review
+    status: done
     stage: review
     created_at: 2026-05-11T00:45:43.076Z
-    updated_at: 2026-05-11T15:19:35.068Z
+    updated_at: 2026-05-11T17:38:06.281Z
     notes:
       - ts: 2026-05-11T15:19:24.797Z
         body: "Implemented read-only dispatch query surface: foreman dispatch list/show now expose persisted
           runs, attempts, events, and attempt-linked session overviews in stable JSON. Added CLI
           coverage, docs, and kept runner/worktree behavior out of scope."
+    dispatch:
+      status: ready
+      risk_level: low
+      approval_required: none
+      allowed_actions:
+        - edit_source
+        - run_tests
+      blocked_actions:
+        - launch_runner
+  - id: dispatch-create-command
+    title: Dispatch create command
+    spec: >
+      Add the first write-side dispatch CLI surface by creating persisted queued dispatch runs
+      without launching agents or creating worktrees.
+
+
+      Scope:
+
+      - Add `foreman dispatch create <task>/<chunk> [--stage <stage>]`.
+
+      - Validate task/chunk existence through the control repo YAML.
+
+      - Reuse chunk readiness evaluation and refuse to create runs for chunks that are not
+      dispatch-ready.
+
+      - Persist a `dispatch_runs` row with status `queued`, source `cli`, requested stage, and
+      timestamps.
+
+      - Persist an initial `dispatch_events` row of type `queued`.
+
+      - Return stable JSON useful for the future UI.
+
+      - Do not launch Claude/Codex, create worktrees, mutate chunk status, or create attempts in
+      this slice.
+
+
+      Expected outcome:
+
+      - A ready chunk can be explicitly queued into local SQLite and then inspected through the
+      existing dispatch list/show commands.
+
+      - Not-ready chunks fail before any run rows are inserted, with actionable blockers in the
+      error payload.
+    status: review
+    stage: review
+    created_at: 2026-05-11T17:38:06.000Z
+    updated_at: 2026-05-11T17:45:41.852Z
+    notes:
+      - ts: 2026-05-11T17:45:41.852Z
+        body: "Implemented queued dispatch creation: foreman dispatch create now validates readiness,
+          rejects discovery dispatch stages, atomically inserts a queued run plus queued event,
+          returns UI-oriented JSON with readiness details, and leaves agent
+          launch/worktrees/attempts out of scope. Verified with build, focused tests, full suite,
+          and a real dogfood queued run."
+    dispatch:
+      status: ready
+      risk_level: low
+      approval_required: none
+      allowed_actions:
+        - edit_source
+        - run_tests
+      blocked_actions:
+        - launch_runner
