@@ -3,6 +3,7 @@ import { getSessionById, type SessionOverview } from "./session-queries";
 
 export interface DispatchRunRecord {
   id: string;
+  repo_name: string | null;
   task_id: string;
   chunk_id: string;
   requested_stage: string;
@@ -65,6 +66,7 @@ export function getDispatchRunById(db: Database, id: string): DispatchRunRecord 
     .query<DispatchRunRecord, [string]>(
       `SELECT
         id,
+        repo_name,
         task_id,
         chunk_id,
         requested_stage,
@@ -110,6 +112,7 @@ export function listDispatchRuns(db: Database, filters: DispatchRunFilters = {})
     .prepare<DispatchRunRecord, SQLQueryBindings[]>(
       `SELECT
         id,
+        repo_name,
         task_id,
         chunk_id,
         requested_stage,

@@ -9,6 +9,7 @@ type NowGenerator = () => string;
 
 export interface CreateQueuedDispatchRunOptions {
   requestedStage: ChunkStage;
+  repoName: string;
   requestedBy?: string | null;
   source?: string;
   idGenerator?: IdGenerator;
@@ -30,6 +31,7 @@ export function createQueuedDispatchRun(
   const create = db.transaction(() => {
     insertDispatchRun(db, {
       id: runId,
+      repoName: options.repoName,
       taskId: ref.taskId,
       chunkId: ref.chunkId,
       requestedStage: options.requestedStage,
@@ -49,6 +51,7 @@ export function createQueuedDispatchRun(
       dataJson: JSON.stringify({
         task_id: ref.taskId,
         chunk_id: ref.chunkId,
+        repo_name: options.repoName,
         requested_stage: options.requestedStage,
         source
       })

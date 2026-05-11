@@ -32,6 +32,7 @@ describe("Phase 8c dispatch create CLI", () => {
     expect(created.stderr).toBe("");
     expect(run.id).toMatch(runIdPattern);
     expect(run).toMatchObject({
+      repo_name: "foreman",
       task_id: "FOREMAN-8",
       chunk_id: "dispatch-create-command",
       requested_stage: "implement",
@@ -52,6 +53,7 @@ describe("Phase 8c dispatch create CLI", () => {
     expect(JSON.parse(run.events[0].data_json)).toEqual({
       task_id: "FOREMAN-8",
       chunk_id: "dispatch-create-command",
+      repo_name: "foreman",
       requested_stage: "implement",
       source: "cli"
     });
@@ -164,9 +166,16 @@ function setupRepo(options: { ready: boolean }): string {
 
 function createGitRepo(): string {
   const dir = createTempDir();
+  runGit(dir, ["init"]);
+  runGit(dir, ["remote", "add", "origin", "git@example.com:mkdevforge/foreman.git"]);
+
+  return dir;
+}
+
+function runGit(cwd: string, args: string[]): void {
   const result = Bun.spawnSync({
-    cmd: ["git", "init"],
-    cwd: dir,
+    cmd: ["git", ...args],
+    cwd,
     stdout: "pipe",
     stderr: "pipe"
   });
@@ -174,8 +183,6 @@ function createGitRepo(): string {
   if (result.exitCode !== 0) {
     throw new Error(decodeOutput(result.stderr));
   }
-
-  return dir;
 }
 
 function runForeman(cwd: string, homeDir: string, argv: string[]) {

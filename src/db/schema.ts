@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
 
-export const FOREMAN_DB_SCHEMA_VERSION = 3;
+export const FOREMAN_DB_SCHEMA_VERSION = 4;
 
 const MIGRATION_1_STATEMENTS = [
   `CREATE TABLE sessions (
@@ -157,6 +157,12 @@ const MIGRATION_3_STATEMENTS = [
   BEGIN
     SELECT RAISE(ABORT, 'dispatch_attempts run_id cannot orphan existing dispatch_events');
   END`,
+  "PRAGMA user_version = 3"
+] as const;
+
+const MIGRATION_4_STATEMENTS = [
+  "ALTER TABLE dispatch_runs ADD COLUMN repo_name TEXT",
+  "CREATE INDEX idx_dispatch_runs_repo_name ON dispatch_runs(repo_name)",
   `PRAGMA user_version = ${FOREMAN_DB_SCHEMA_VERSION}`
 ] as const;
 
@@ -186,6 +192,11 @@ export function migrateDatabaseSchema(db: Database): void {
 
   if (currentVersion < 3) {
     applyMigration3(db);
+    currentVersion = getUserVersion(db);
+  }
+
+  if (currentVersion < 4) {
+    applyMigration4(db);
   }
 
   const migratedVersion = getUserVersion(db);
@@ -229,6 +240,16 @@ function applyMigration2(db: Database): void {
 function applyMigration3(db: Database): void {
   const migration = db.transaction(() => {
     for (const statement of MIGRATION_3_STATEMENTS) {
+      db.run(statement);
+    }
+  });
+
+  migration.immediate();
+}
+
+function applyMigration4(db: Database): void {
+  const migration = db.transaction(() => {
+    for (const statement of MIGRATION_4_STATEMENTS) {
       db.run(statement);
     }
   });

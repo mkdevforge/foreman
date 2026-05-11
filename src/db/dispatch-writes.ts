@@ -6,6 +6,7 @@ interface SqlRunResult {
 
 export interface InsertDispatchRunInput {
   id: string;
+  repoName?: string | null;
   taskId: string;
   chunkId: string;
   requestedStage: string;
@@ -47,6 +48,7 @@ export function insertDispatchRun(db: Database, input: InsertDispatchRunInput): 
     db,
     `INSERT INTO dispatch_runs (
       id,
+      repo_name,
       task_id,
       chunk_id,
       requested_stage,
@@ -56,9 +58,10 @@ export function insertDispatchRun(db: Database, input: InsertDispatchRunInput): 
       created_at,
       updated_at,
       finished_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.id,
+      input.repoName ?? null,
       input.taskId,
       input.chunkId,
       input.requestedStage,
@@ -74,11 +77,23 @@ export function insertDispatchRun(db: Database, input: InsertDispatchRunInput): 
 
 export function updateDispatchRunStatus(
   db: Database,
-  input: { id: string; status: string; updatedAt: string; finishedAt?: string | null; expectedStatus?: string }
+  input: {
+    id: string;
+    status: string;
+    updatedAt: string;
+    repoName?: string | null;
+    finishedAt?: string | null;
+    expectedStatus?: string;
+  }
 ): number {
   const assignments = ["status = ?", "updated_at = ?"];
   const params: SQLQueryBindings[] = [input.status, input.updatedAt];
   const whereClauses = ["id = ?"];
+
+  if ("repoName" in input) {
+    assignments.push("repo_name = ?");
+    params.push(input.repoName ?? null);
+  }
 
   if ("finishedAt" in input) {
     assignments.push("finished_at = ?");

@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { CliError } from "../cli/errors";
 
 export interface ForemanPaths {
@@ -62,6 +62,15 @@ export function getGitOriginRemote(cwd = process.cwd()): string | null {
   return remote.length > 0 ? remote : null;
 }
 
+export function getRequiredGitOriginRemote(cwd = process.cwd()): string {
+  const remote = getGitOriginRemote(cwd);
+  if (remote === null) {
+    throw new CliError(2, "missing_origin_remote", "dispatch requires remote.origin.url on the control repo");
+  }
+
+  return remote;
+}
+
 export function normalizeGitRemoteUrl(remote: string): string {
   const trimmed = remote.trim();
   if (trimmed.length === 0) {
@@ -79,6 +88,18 @@ export function normalizeGitRemoteUrl(remote: string): string {
   }
 
   return stripGitSuffix(trimmed).toLowerCase();
+}
+
+export function repoNameFromGitRemote(remote: string): string {
+  const normalized = normalizeGitRemoteUrl(remote);
+  const lastSegment = basename(normalized);
+  const sanitized = sanitizePathSegment(lastSegment);
+
+  if (sanitized.length === 0) {
+    throw new CliError(2, "invalid_origin_remote", `could not derive a repo name from remote.origin.url '${remote}'`);
+  }
+
+  return sanitized;
 }
 
 export function getForemanPaths(repoRoot: string): ForemanPaths {
@@ -117,4 +138,12 @@ function normalizeScpLikeRemote(remote: string): string | null {
 
 function stripGitSuffix(value: string): string {
   return value.replace(/\/+$/, "").replace(/\.git$/i, "");
+}
+
+function sanitizePathSegment(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }

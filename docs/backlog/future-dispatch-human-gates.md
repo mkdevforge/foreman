@@ -4,7 +4,7 @@ Status: Seeded for post-v0. Do not implement in v0.
 
 Reference: use `references/symphony/` as product/design input for the desired dispatch end state. Treat it as reference-only material; do not copy or vendor code.
 
-Active implementation tracking has moved to `.foreman/tasks/*.yaml`; current dispatch-readiness slices live in `.foreman/tasks/FOREMAN-7.yaml`. This document remains product/design reference and should not duplicate Foreman progress state.
+Active implementation tracking has moved to `.foreman/tasks/*.yaml`. This document remains product/design reference and should not duplicate Foreman progress state.
 
 ## Goal
 

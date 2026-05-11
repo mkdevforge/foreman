@@ -227,9 +227,16 @@ function seedRun(homeDir: string, input: { id: string; status: string }): void {
 
 function createGitRepo(): string {
   const dir = createTempDir();
+  runGit(dir, ["init"]);
+  runGit(dir, ["remote", "add", "origin", "git@example.com:mkdevforge/foreman.git"]);
+
+  return dir;
+}
+
+function runGit(cwd: string, args: string[]): void {
   const result = Bun.spawnSync({
-    cmd: ["git", "init"],
-    cwd: dir,
+    cmd: ["git", ...args],
+    cwd,
     stdout: "pipe",
     stderr: "pipe"
   });
@@ -237,8 +244,6 @@ function createGitRepo(): string {
   if (result.exitCode !== 0) {
     throw new Error(decodeOutput(result.stderr));
   }
-
-  return dir;
 }
 
 function runForeman(cwd: string, homeDir: string, argv: string[]) {

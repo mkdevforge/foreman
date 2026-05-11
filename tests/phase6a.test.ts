@@ -16,7 +16,7 @@ const tempDirs: string[] = [];
 describe("Phase 6a automated acceptance hardening", () => {
   test("every JSON-capable command returns a schema_version 1 JSON envelope", () => {
     const homeDir = createTempDir();
-    const repo = createGitRepo(createTempDir(), "git@example.com:mkdevforge/foreman.git");
+    const repo = createGitRepo(join(createTempDir(), "control"), "git@example.com:mkdevforge/foreman.git");
     const specPath = join(repo, "spec.md");
     writeFileSync(specPath, "Build the API surface.\n", "utf8");
 
@@ -56,6 +56,7 @@ describe("Phase 6a automated acceptance hardening", () => {
     ]);
     expectJsonCommand(repo, homeDir, ["decision", "list", "FOREMAN-1/api"], ["task_id", "chunk_id", "decisions"]);
     setDispatchReadiness(repo, "FOREMAN-1");
+    commitAll(repo);
     expectJsonCommand(repo, homeDir, ["chunk", "ready", "FOREMAN-1/api"], [
       "task_id",
       "chunk_id",
@@ -85,6 +86,11 @@ describe("Phase 6a automated acceptance hardening", () => {
     ]);
     expectJsonCommand(repo, homeDir, ["dispatch", "claim", claimedDispatchRun.dispatch_run.id, "--tool", "codex"], [
       "dispatch_run",
+      "changed"
+    ]);
+    expectJsonCommand(repo, homeDir, ["dispatch", "prepare", claimedDispatchRun.dispatch_run.id], [
+      "dispatch_run",
+      "workspace",
       "changed"
     ]);
 
@@ -360,6 +366,26 @@ function createGitRepo(path: string, remote?: string): string {
   }
 
   return path;
+}
+
+function commitAll(path: string): void {
+  runGit(path, ["config", "user.email", "dev@example.com"]);
+  runGit(path, ["config", "user.name", "Dev"]);
+  runGit(path, ["add", "."]);
+  runGit(path, ["commit", "-m", "Initial Foreman task"]);
+}
+
+function runGit(cwd: string, args: string[]): void {
+  const result = Bun.spawnSync({
+    cmd: ["git", ...args],
+    cwd,
+    stdout: "pipe",
+    stderr: "pipe"
+  });
+
+  if (result.exitCode !== 0) {
+    throw new Error(decodeOutput(result.stderr));
+  }
 }
 
 function runSql(db: Database, sql: string, params: SQLQueryBindings[] = []): void {

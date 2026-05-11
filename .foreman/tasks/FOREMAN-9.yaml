@@ -1,0 +1,83 @@
+schema_version: 1
+id: FOREMAN-9
+title: Dispatch workspace preparation
+source_ref: null
+description: Prepare claimed dispatch runs into recorded task-level sibling worktrees before launching agents.
+status: doing
+created_at: 2026-05-11T22:50:35.073Z
+updated_at: 2026-05-11T23:06:23.252Z
+chunks:
+  - id: dispatch-prepare-worktree
+    title: Dispatch prepare worktree
+    spec: >
+      Add a runner-adjacent prepare step that turns a claimed dispatch run into a recorded attempt
+
+      and task-level sibling worktree, without launching an agent.
+
+
+      Scope:
+
+      - Add `foreman dispatch prepare <run-id-or-prefix>`.
+
+      - Resolve run IDs by exact ID or unique prefix.
+
+      - Allow preparing runs only in `claimed` status.
+
+      - Require `remote.origin.url` on the control repo before preparing; fail explicitly when
+      absent.
+
+      - Derive a stable repo name from the remote and use it in the default sibling worktree path.
+
+      - Use one reusable sibling worktree per Foreman task, not per chunk.
+
+      - Use branch `foreman/<task-id>` for the task worktree.
+
+      - Create the branch/worktree when missing, or reuse the existing worktree when it already
+      matches.
+
+      - Insert the first `dispatch_attempts` row with status `preparing_workspace`, the claimed
+      tool,
+        workspace path, worktree branch, and started timestamp.
+      - Update the run to `running` and append attempt-level events transactionally after worktree
+        preparation succeeds.
+      - Return stable JSON with the updated dispatch run detail and workspace metadata.
+
+      - Do not launch Claude/Codex, attach sessions, stream output, mutate task YAML, or clean up
+      worktrees
+        in this slice.
+
+      Expected outcome:
+
+      - A claimed run can be prepared into a local, auditable attempt workspace.
+
+      - Remote-less repositories, invalid statuses, missing IDs, ambiguous prefixes,
+      dirty/conflicting
+        worktree states, and duplicate preparation attempts fail explicitly without creating duplicate
+        attempts.
+    status: doing
+    stage: review
+    created_at: 2026-05-11T22:50:39.953Z
+    updated_at: 2026-05-11T23:06:23.252Z
+    notes:
+      - ts: 2026-05-11T23:05:13.322Z
+        body: "Implemented dispatch prepare: dispatch runs now store repo_name from remote.origin.url,
+          create requires an origin remote, prepare verifies repo_name, creates/reuses a task-level
+          sibling worktree on foreman/<task-id>, records a preparing_workspace attempt plus
+          attempt_prepared event, and leaves agent launch/session attachment out of scope. Verified
+          with build, focused tests, full suite, and a real dogfood create-claim-prepare run."
+    dispatch:
+      status: ready
+      risk_level: medium
+      approval_required: none
+      allowed_actions:
+        - edit_source
+        - run_tests
+        - create_worktree
+      blocked_actions:
+        - launch_runner
+    decisions:
+      - id: d_019e1947-81e6-7631-a8f6-cf9c21cea91e
+        body: Dispatch prepare requires remote.origin.url on the control repo and stores the derived
+          repo_name as the local dispatch relationship key; workspace paths use
+          ../foreman-worktrees/<repo-name>/<task-id>.
+        decided_at: 2026-05-11T23:02:57.254Z

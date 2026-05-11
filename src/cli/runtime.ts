@@ -13,6 +13,7 @@ import {
   type DispatchTool
 } from "../dispatch/claim";
 import { createQueuedDispatchRun } from "../dispatch/create";
+import { prepareClaimedDispatchRun, type PrepareDispatchRunResult } from "../dispatch/prepare";
 import {
   getDispatchRunDetailById,
   listDispatchRunDetails,
@@ -42,7 +43,13 @@ import {
   type SessionToolCall,
   type SessionUsage
 } from "../db/session-queries";
-import { findRepoRoot, getGitOriginRemote, normalizeGitRemoteUrl } from "../store/repo";
+import {
+  findRepoRoot,
+  getGitOriginRemote,
+  getRequiredGitOriginRemote,
+  normalizeGitRemoteUrl,
+  repoNameFromGitRemote
+} from "../store/repo";
 import {
   clearActiveContext,
   getActiveContextStatus,
@@ -615,7 +622,7 @@ function createCatalogCommand(json: boolean, io: CliIo): Command {
 
 function createDispatchCommand(json: boolean, io: CliIo): Command {
   const dispatch = configureCommand(new Command("dispatch"), io)
-    .description("Create, claim, cancel, and query persisted dispatch runs.")
+    .description("Create, claim, prepare, cancel, and query persisted dispatch runs.")
     .action(() => {
       throw new CliError(2, "missing_command", "missing dispatch command");
     });
@@ -626,6 +633,8 @@ function createDispatchCommand(json: boolean, io: CliIo): Command {
     .option("--stage <stage>", "requested dispatch stage: plan, implement, or review")
     .action((ref: string, options: { stage?: string }) => {
       const controlRepoRoot = findRepoRoot();
+      const repoRemote = getRequiredGitOriginRemote(controlRepoRoot);
+      const repoName = repoNameFromGitRemote(repoRemote);
       const chunkRef = parseChunkRef(ref);
       let requestedStageOverride: ChunkStage | undefined;
 
@@ -650,6 +659,7 @@ function createDispatchCommand(json: boolean, io: CliIo): Command {
       const run = withForemanDatabase((db) =>
         createQueuedDispatchRun(db, chunkRef, {
           requestedStage: requestedStageOverride ?? readiness.chunk.stage,
+          repoName,
           source: "cli"
         })
       );
@@ -685,6 +695,50 @@ function createDispatchCommand(json: boolean, io: CliIo): Command {
 
       writeData(json, io, renderDispatchClaim(result), {
         dispatch_run: toJsonDispatchRunDetail(result.detail),
+        changed: true
+      });
+    });
+
+  configureCommand(dispatch.command("prepare"), io)
+    .description("Prepare a claimed dispatch run workspace without launching an agent.")
+    .argument("<run-id-or-prefix>")
+    .action((prefix: string) => {
+      const controlRepoRoot = findRepoRoot();
+      const repoRemote = getRequiredGitOriginRemote(controlRepoRoot);
+      const repoName = repoNameFromGitRemote(repoRemote);
+      const result = withForemanDatabase((db) =>
+        prepareClaimedDispatchRun(db, resolveDispatchRunIdOrThrow(db, prefix), {
+          controlRepoRoot,
+          repoRemote,
+          repoName
+        })
+      );
+
+      if (result.kind === "missing") {
+        throw new CliError(1, "dispatch_run_not_found", `dispatch run '${prefix}' was not found`);
+      }
+
+      if (result.kind === "repo_mismatch") {
+        throw new CliError(
+          2,
+          "dispatch_repo_mismatch",
+          `dispatch run '${result.detail.run.id}' belongs to repo '${result.expectedRepoName}', not '${result.actualRepoName ?? "null"}'`,
+          { dispatch_run: toJsonDispatchRunDetail(result.detail), repo_name: result.actualRepoName }
+        );
+      }
+
+      if (result.kind === "not_preparable") {
+        throw new CliError(
+          2,
+          "dispatch_run_not_preparable",
+          `dispatch run '${result.detail.run.id}' cannot be prepared: ${result.reason}`,
+          { dispatch_run: toJsonDispatchRunDetail(result.detail), reason: result.reason }
+        );
+      }
+
+      writeData(json, io, renderDispatchPrepare(result), {
+        dispatch_run: toJsonDispatchRunDetail(result.detail),
+        workspace: result.workspace,
         changed: true
       });
     });
@@ -1640,6 +1694,7 @@ function toJsonDispatchRunDetail(detail: DispatchRunDetail) {
 function toJsonDispatchRun(run: DispatchRunRecord) {
   return {
     id: run.id,
+    repo_name: run.repo_name,
     task_id: run.task_id,
     chunk_id: run.chunk_id,
     requested_stage: run.requested_stage,
@@ -2110,10 +2165,23 @@ function renderDispatchClaim(result: Exclude<ClaimDispatchRunResult, { kind: "mi
   return `Claimed dispatch run ${result.detail.run.id}.\n`;
 }
 
+function renderDispatchPrepare(
+  result: Exclude<PrepareDispatchRunResult, { kind: "missing" | "repo_mismatch" | "not_preparable" }>
+): string {
+  return [
+    `Prepared dispatch run ${result.detail.run.id}.`,
+    `Workspace: ${result.workspace.workspace_path}`,
+    `Worktree branch: ${result.workspace.worktree_branch}`,
+    `Workspace created: ${result.workspace.created ? "yes" : "no"}`,
+    ""
+  ].join("\n");
+}
+
 function renderDispatchRunShow(detail: DispatchRunDetail): string {
   const run = detail.run;
   const lines = [
     `Dispatch Run ${run.id}`,
+    `Repo: ${run.repo_name ?? "null"}`,
     `Task: ${run.task_id}`,
     `Chunk: ${run.chunk_id}`,
     `Requested stage: ${run.requested_stage}`,
@@ -2214,6 +2282,7 @@ function formatDispatchRunListRow(detail: DispatchRunDetail): string {
   return [
     run.id,
     run.status,
+    `repo=${run.repo_name ?? "null"}`,
     `${run.task_id}/${run.chunk_id}`,
     `stage=${run.requested_stage}`,
     `attempts=${detail.attempts.length}`,

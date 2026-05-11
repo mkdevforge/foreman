@@ -53,7 +53,7 @@ These are intentionally outside v0, but v0 should avoid design choices that make
 
 | Topic | File | Status | Notes |
 | --- | --- | --- | --- |
-| Dispatch and human gates | [future dispatch and human gates](future-dispatch-human-gates.md) | Active in Foreman | Active slices are tracked under `.foreman/tasks/*.yaml`; `FOREMAN-8` is the current dispatch persistence task. This doc remains product/design reference. |
+| Dispatch and human gates | [future dispatch and human gates](future-dispatch-human-gates.md) | Active in Foreman | Active slices are tracked under `.foreman/tasks/*.yaml`; this doc remains product/design reference. |
 
 ## Decision Gates
 

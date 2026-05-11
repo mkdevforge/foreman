@@ -38,7 +38,7 @@ YAML is still the right place for data that should follow the task through Git h
 
 ## SQLite Shape
 
-Database schema versions 2 and 3 add the dispatch persistence foundation. The runner is still future work, but the dispatch CLI creates queued run records and queries these entities rather than adding run-attempt fields to YAML.
+Database schema versions 2 through 4 add the dispatch persistence foundation. The runner is still future work, but the dispatch CLI creates queued run records, prepares local attempts, and queries these entities rather than adding run-attempt fields to YAML.
 
 ### `dispatch_runs`
 
@@ -47,6 +47,7 @@ One logical user request to dispatch a chunk.
 Fields:
 
 - `id` prefixed UUIDv7, for example `run_<uuidv7>`
+- `repo_name`: derived from `remote.origin.url`, for example `foreman`
 - `task_id`
 - `chunk_id`
 - `requested_stage`
@@ -104,9 +105,11 @@ Fields:
 
 ## Worktrees
 
+Dispatch requires `remote.origin.url` on the control repo. Foreman derives a repo name from that remote and uses it as the local relationship key for dispatch runs and workspace paths.
+
 Future dispatch should prefer sibling worktrees for implementation attempts. Worktree paths, branches, and cleanup state are local execution details and therefore belong in SQLite attempt rows, not YAML.
 
-Readiness evaluation should run against the control repo's YAML before a dispatch run is created. The attempt workspace can then be created from the same repo remote/branch context.
+Readiness evaluation should run against the control repo's YAML before a dispatch run is created. The attempt workspace can then be created from the same repo remote/branch context. Workspace ownership is task-level: the default path is `../foreman-worktrees/<repo-name>/<task-id>` from the control repo root, on branch `foreman/<task-id>`, and later chunks in the same task should reuse that workspace.
 
 ## CLI Surface
 
@@ -114,13 +117,16 @@ The initial user-facing dispatch surface is deliberately below the runner layer:
 
 - `foreman dispatch create <task>/<chunk> [--stage <stage>]`
 - `foreman dispatch claim <run-id-or-prefix> --tool <claude-code|codex>`
+- `foreman dispatch prepare <run-id-or-prefix>`
 - `foreman dispatch cancel <run-id-or-prefix>`
 - `foreman dispatch list [--task <id>] [--chunk <id>] [--status <status>]`
 - `foreman dispatch show <run-id-or-prefix>`
 
-`foreman dispatch create` validates readiness from control-repo YAML first, then atomically inserts one `queued` `dispatch_runs` row and one run-level `queued` event. Requested dispatch stages are `plan`, `implement`, or `review`; `discovery` remains a pre-dispatch stage. The command does not launch agents, create worktrees, create attempts, mutate chunk status, or write run state to YAML.
+`foreman dispatch create` requires an origin remote, validates readiness from control-repo YAML first, then atomically inserts one `queued` `dispatch_runs` row and one run-level `queued` event. Requested dispatch stages are `plan`, `implement`, or `review`; `discovery` remains a pre-dispatch stage. The command does not launch agents, create worktrees, create attempts, mutate chunk status, or write run state to YAML.
 
 `foreman dispatch claim` resolves exact IDs or unique prefixes, changes queued runs to `claimed`, and appends one run-level `claimed` event with the selected tool. This is only a local queue ownership step; it does not create attempts, create worktrees, launch agents, mutate task YAML, or attach sessions.
+
+`foreman dispatch prepare` resolves exact IDs or unique prefixes, verifies the current control repo's derived `repo_name` matches the run, creates or reuses the task-level sibling worktree, changes the run from `claimed` to `running`, inserts the first `preparing_workspace` attempt, and appends one attempt-level `attempt_prepared` event. It still does not launch agents, stream output, attach sessions, mutate task YAML, or clean up worktrees.
 
 `foreman dispatch cancel` resolves exact IDs or unique prefixes, changes queued runs to `canceled`, sets `finished_at`, and appends one run-level `canceled` event transactionally. Runs already in `canceled` status are successful no-ops. Other statuses are rejected until a later runner slice defines live stop behavior.
 
@@ -139,6 +145,5 @@ That split keeps the UI honest about which facts are committed project knowledge
 
 - No agent-running command.
 - No background scheduler.
-- No worktree creation.
-- No process launching.
+- No Claude/Codex process launching.
 - No YAML run-attempt fields.

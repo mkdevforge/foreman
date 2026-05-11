@@ -80,6 +80,7 @@ function insertRun(db: Database, id = "run_019e1500-0000-7000-8000-000000000001"
   expect(
     insertDispatchRun(db, {
       id,
+      repoName: "foreman",
       taskId: "FOREMAN-8",
       chunkId: "sqlite-dispatch-schema",
       requestedStage: "implement",
@@ -146,6 +147,7 @@ describe("Phase 8a dispatch persistence foundation", () => {
 
       expect(getDispatchRunById(db, runId)).toMatchObject({
         id: runId,
+        repo_name: "foreman",
         task_id: "FOREMAN-8",
         chunk_id: "sqlite-dispatch-schema",
         requested_stage: "implement",

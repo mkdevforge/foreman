@@ -29,6 +29,7 @@ const expectedIndexes = [
   "idx_dispatch_events_type",
   "idx_dispatch_runs_chunk",
   "idx_dispatch_runs_created",
+  "idx_dispatch_runs_repo_name",
   "idx_dispatch_runs_status",
   "idx_prompts_session",
   "idx_session_chunks_task",
