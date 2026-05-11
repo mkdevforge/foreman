@@ -5,7 +5,7 @@ source_ref: null
 description: Add local SQLite persistence for future Foreman dispatch runs before implementing runner behavior.
 status: doing
 created_at: 2026-05-11T00:45:35.283Z
-updated_at: 2026-05-11T19:16:15.867Z
+updated_at: 2026-05-11T19:33:50.002Z
 chunks:
   - id: sqlite-dispatch-schema
     title: SQLite dispatch schema
@@ -239,7 +239,7 @@ chunks:
     status: doing
     stage: review
     created_at: 2026-05-11T18:58:42.722Z
-    updated_at: 2026-05-11T19:16:15.867Z
+    updated_at: 2026-05-11T19:33:50.002Z
     notes:
       - ts: 2026-05-11T19:04:21.489Z
         body: "Implemented dispatch claim: foreman dispatch claim now validates claude-code/codex tools,
@@ -252,6 +252,11 @@ chunks:
           queued-to-claimed writes the claimed event. If the row leaves queued between the initial
           read and update, claim returns not_claimable and preserves the existing events. Added a
           regression covering that lost-claim path."
+      - ts: 2026-05-11T19:33:50.002Z
+        body: "Addressed adjacent review finding: cancel now uses the same conditional queued-state
+          transition as claim. If another operation moves the run before cancel's update, cancel
+          re-reads the run and returns already_canceled or not_cancelable without appending a stale
+          canceled event. Added regression coverage for both lost-cancel paths."
     dispatch:
       status: ready
       risk_level: low

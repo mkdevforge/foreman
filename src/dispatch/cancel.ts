@@ -41,12 +41,24 @@ export function cancelQueuedDispatchRun(
     }
 
     const timestamp = now();
-    updateDispatchRunStatus(db, {
+    const updated = updateDispatchRunStatus(db, {
       id: runId,
       status: "canceled",
       updatedAt: timestamp,
-      finishedAt: timestamp
+      finishedAt: timestamp,
+      expectedStatus: "queued"
     });
+
+    if (updated !== 1) {
+      const detail = getDispatchRunDetailById(db, runId);
+      if (detail === null) {
+        return { kind: "missing" } satisfies CancelDispatchRunResult;
+      }
+
+      return detail.run.status === "canceled"
+        ? ({ kind: "already_canceled", detail } satisfies CancelDispatchRunResult)
+        : ({ kind: "not_cancelable", detail } satisfies CancelDispatchRunResult);
+    }
 
     insertDispatchEvent(db, {
       id: `evt_${idGenerator()}`,

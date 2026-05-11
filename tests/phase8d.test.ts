@@ -5,7 +5,9 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse, stringify } from "yaml";
 import { openForemanDatabase } from "../src/db/client";
+import { getDispatchRunDetailById } from "../src/db/dispatch-queries";
 import { insertDispatchEvent, insertDispatchRun } from "../src/db/dispatch-writes";
+import { cancelQueuedDispatchRun } from "../src/dispatch/cancel";
 
 const repoRoot = fileURLToPath(new URL("../", import.meta.url));
 const foremanBin = join(repoRoot, "foreman");
@@ -71,6 +73,60 @@ describe("Phase 8d dispatch cancel CLI", () => {
     );
     expect(shown.dispatch_run.status).toBe("running");
     expect(shown.dispatch_run.events.map((event: any) => event.type)).toEqual(["attempt_started"]);
+  });
+
+  test("does not append a cancel event when the queued status is lost before the conditional update", () => {
+    const homeDir = createTempDir();
+    const nonCancelableRunId = "run_019f7000-0000-7000-8000-000000000003";
+    const alreadyCanceledRunId = "run_019f7000-0000-7000-8000-000000000004";
+    seedRun(homeDir, { id: nonCancelableRunId, status: "queued" });
+    seedRun(homeDir, { id: alreadyCanceledRunId, status: "queued" });
+    const db = openForemanDatabase({ homeDir });
+
+    try {
+      const nonCancelable = cancelQueuedDispatchRun(db, nonCancelableRunId, {
+        idGenerator: () => "019f7000-0000-7000-8000-000000000005",
+        now: () => {
+          db.prepare("UPDATE dispatch_runs SET status = ?, updated_at = ? WHERE id = ?").run(
+            "claimed",
+            "2026-05-11T18:00:02.000Z",
+            nonCancelableRunId
+          );
+          return "2026-05-11T18:00:03.000Z";
+        }
+      });
+
+      expect(nonCancelable.kind).toBe("not_cancelable");
+      if (nonCancelable.kind === "not_cancelable") {
+        expect(nonCancelable.detail.run.status).toBe("claimed");
+      }
+
+      const nonCancelableDetail = getDispatchRunDetailById(db, nonCancelableRunId);
+      expect(nonCancelableDetail?.run.status).toBe("claimed");
+      expect(nonCancelableDetail?.events.map((event) => event.type)).toEqual(["queued"]);
+
+      const alreadyCanceled = cancelQueuedDispatchRun(db, alreadyCanceledRunId, {
+        idGenerator: () => "019f7000-0000-7000-8000-000000000006",
+        now: () => {
+          db.prepare("UPDATE dispatch_runs SET status = ?, updated_at = ?, finished_at = ? WHERE id = ?").run(
+            "canceled",
+            "2026-05-11T18:00:04.000Z",
+            "2026-05-11T18:00:04.000Z",
+            alreadyCanceledRunId
+          );
+          return "2026-05-11T18:00:05.000Z";
+        }
+      });
+
+      expect(alreadyCanceled.kind).toBe("already_canceled");
+
+      const alreadyCanceledDetail = getDispatchRunDetailById(db, alreadyCanceledRunId);
+      expect(alreadyCanceledDetail?.run.status).toBe("canceled");
+      expect(alreadyCanceledDetail?.run.finished_at).toBe("2026-05-11T18:00:04.000Z");
+      expect(alreadyCanceledDetail?.events.map((event) => event.type)).toEqual(["queued"]);
+    } finally {
+      db.close();
+    }
   });
 
   test("reports missing and ambiguous cancel targets", () => {
