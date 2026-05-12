@@ -5,7 +5,7 @@ source_ref: null
 description: Build deterministic prompt previews for prepared dispatch attempts before launching agents.
 status: doing
 created_at: 2026-05-12T01:03:22.671Z
-updated_at: 2026-05-12T01:09:19.175Z
+updated_at: 2026-05-12T01:27:24.686Z
 chunks:
   - id: dispatch-prompt-preview
     title: Dispatch prompt preview
@@ -34,10 +34,10 @@ chunks:
         process-launch time.
       - Invalid statuses, missing attempts, multiple attempts, missing workspace paths, repo mismatches,
         missing task/chunk YAML, and ambiguous prefixes fail explicitly without side effects.
-    status: doing
+    status: done
     stage: review
     created_at: 2026-05-12T01:03:26.961Z
-    updated_at: 2026-05-12T01:09:19.175Z
+    updated_at: 2026-05-12T01:27:24.686Z
     notes:
       - ts: 2026-05-12T01:09:14.841Z
         body: "Implemented dispatch prompt preview: foreman dispatch prompt now verifies repo_name, requires
