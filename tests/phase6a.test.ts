@@ -98,7 +98,7 @@ describe("Phase 6a automated acceptance hardening", () => {
     const fakeBin = createTempDir();
     const launchCapture = createTempDir();
     writeFakeAgentBinary(fakeBin, "codex");
-    expectJsonCommand(
+    const launchedDispatchRun = expectJsonCommand(
       repo,
       homeDir,
       ["dispatch", "launch", claimedDispatchRun.dispatch_run.id],
@@ -111,6 +111,15 @@ describe("Phase 6a automated acceptance hardening", () => {
     await waitForFile(join(launchCapture, "stdin"));
 
     seedAcceptanceSessions(homeDir, repo);
+    attachAcceptanceDispatchSession(
+      homeDir,
+      launchedDispatchRun.dispatch_launch.attempt_id,
+      "018f6000-0000-7000-8000-000000000001"
+    );
+    expectJsonCommand(repo, homeDir, ["dispatch", "finish", claimedDispatchRun.dispatch_run.id, "--status", "succeeded"], [
+      "dispatch_run",
+      "changed"
+    ]);
     seedAcceptanceDispatchRuns(homeDir);
 
     expectJsonCommand(repo, homeDir, ["session", "list"], ["sessions"]);
@@ -257,6 +266,16 @@ function seedAcceptanceDispatchRuns(homeDir: string): void {
         dataJson: "{\"tool\":\"codex\"}"
       })
     ).toBe(1);
+  } finally {
+    db.close();
+  }
+}
+
+function attachAcceptanceDispatchSession(homeDir: string, attemptId: string, sessionId: string): void {
+  const db = openForemanDatabase({ homeDir });
+
+  try {
+    runSql(db, "UPDATE dispatch_attempts SET session_id = ? WHERE id = ?", [sessionId, attemptId]);
   } finally {
     db.close();
   }

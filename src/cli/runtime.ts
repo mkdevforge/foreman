@@ -13,6 +13,12 @@ import {
   type DispatchTool
 } from "../dispatch/claim";
 import { createQueuedDispatchRun } from "../dispatch/create";
+import {
+  DISPATCH_FINISH_STATUSES,
+  finishDispatchRun,
+  type DispatchFinishStatus,
+  type FinishDispatchRunResult
+} from "../dispatch/finish";
 import { launchPreparedDispatchRun, type DispatchLaunch, type LaunchDispatchRunResult } from "../dispatch/launch";
 import { prepareClaimedDispatchRun, type PrepareDispatchRunResult } from "../dispatch/prepare";
 import { buildDispatchPrompt, type BuildDispatchPromptResult, type DispatchPrompt } from "../dispatch/prompt";
@@ -624,7 +630,7 @@ function createCatalogCommand(json: boolean, io: CliIo): Command {
 
 function createDispatchCommand(json: boolean, io: CliIo): Command {
   const dispatch = configureCommand(new Command("dispatch"), io)
-    .description("Create, claim, prepare, prompt, launch, cancel, and query persisted dispatch runs.")
+    .description("Create, claim, prepare, prompt, launch, finish, cancel, and query persisted dispatch runs.")
     .action(() => {
       throw new CliError(2, "missing_command", "missing dispatch command");
     });
@@ -850,6 +856,39 @@ function createDispatchCommand(json: boolean, io: CliIo): Command {
       });
     });
 
+  configureCommand(dispatch.command("finish"), io)
+    .description("Finish a running dispatch run after its launched attempt has captured a session.")
+    .argument("<run-id-or-prefix>")
+    .requiredOption("--status <status>", "succeeded or failed")
+    .option("--message <message>", "optional terminal message; stored as error_message for failures")
+    .action((prefix: string, options: { status: string; message?: string }) => {
+      const status = parseDispatchFinishStatus(options.status);
+      const result = withForemanDatabase((db) =>
+        finishDispatchRun(db, resolveDispatchRunIdOrThrow(db, prefix), {
+          status,
+          message: options.message
+        })
+      );
+
+      if (result.kind === "missing") {
+        throw new CliError(1, "dispatch_run_not_found", `dispatch run '${prefix}' was not found`);
+      }
+
+      if (result.kind === "not_finishable") {
+        throw new CliError(
+          2,
+          "dispatch_run_not_finishable",
+          `dispatch run '${result.detail.run.id}' cannot be finished: ${result.reason}`,
+          { dispatch_run: toJsonDispatchRunDetail(result.detail), reason: result.reason }
+        );
+      }
+
+      writeData(json, io, renderDispatchFinish(result), {
+        dispatch_run: toJsonDispatchRunDetail(result.detail),
+        changed: result.kind === "finished"
+      });
+    });
+
   configureCommand(dispatch.command("cancel"), io)
     .description("Cancel a queued dispatch run.")
     .argument("<run-id-or-prefix>")
@@ -938,6 +977,14 @@ function parseDispatchTool(value: string): DispatchTool {
   }
 
   return value as DispatchTool;
+}
+
+function parseDispatchFinishStatus(value: string): DispatchFinishStatus {
+  if (!DISPATCH_FINISH_STATUSES.includes(value as DispatchFinishStatus)) {
+    throw new CliError(2, "invalid_dispatch_finish_status", `invalid dispatch finish status '${value}'`);
+  }
+
+  return value as DispatchFinishStatus;
 }
 
 function createSessionCommand(json: boolean, io: CliIo): Command {
@@ -2342,6 +2389,16 @@ function renderDispatchLaunch(
     `Workspace: ${result.launch.cwd}`,
     ""
   ].join("\n");
+}
+
+function renderDispatchFinish(
+  result: Exclude<FinishDispatchRunResult, { kind: "missing" | "not_finishable" }>
+): string {
+  if (result.kind === "already_finished") {
+    return `Dispatch run ${result.detail.run.id} was already ${result.detail.run.status}.\n`;
+  }
+
+  return `Finished dispatch run ${result.detail.run.id} as ${result.detail.run.status}.\n`;
 }
 
 function renderDispatchRunShow(detail: DispatchRunDetail): string {

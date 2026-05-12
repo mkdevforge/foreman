@@ -129,6 +129,8 @@ foreman dispatch claim <run-id-or-prefix> --tool claude-code
 foreman dispatch prepare <run-id-or-prefix>
 foreman dispatch prompt <run-id-or-prefix>
 foreman dispatch launch <run-id-or-prefix>
+foreman dispatch finish <run-id-or-prefix> --status succeeded
+foreman dispatch finish <run-id-or-prefix> --status failed --message "Tests failed"
 foreman dispatch cancel <run-id-or-prefix>
 foreman dispatch list
 foreman dispatch list --task FOREMAN-1 --chunk parser --status queued
@@ -136,7 +138,7 @@ foreman dispatch show <run-id-or-prefix>
 foreman dispatch show <run-id-or-prefix> --json
 ```
 
-`foreman dispatch create --json` returns `dispatch_run` and `readiness`. Requested dispatch stages are `plan`, `implement`, or `review`; `discovery` remains a pre-dispatch stage. `foreman dispatch prepare --json` returns the updated `dispatch_run`, `workspace`, and `changed`. `foreman dispatch prompt --json` returns `dispatch_prompt`. `foreman dispatch launch --json` returns the updated `dispatch_run` and `dispatch_launch`. `foreman dispatch cancel --json` returns the updated `dispatch_run` and `changed`. Only queued runs can be canceled; already canceled runs are successful no-ops. `foreman dispatch list --json` returns `dispatch_runs`. `foreman dispatch show --json` returns `dispatch_run`. Each run includes run fields, attempts, events, and any attempt-linked session overview.
+`foreman dispatch create --json` returns `dispatch_run` and `readiness`. Requested dispatch stages are `plan`, `implement`, or `review`; `discovery` remains a pre-dispatch stage. `foreman dispatch prepare --json` returns the updated `dispatch_run`, `workspace`, and `changed`. `foreman dispatch prompt --json` returns `dispatch_prompt`. `foreman dispatch launch --json` returns the updated `dispatch_run` and `dispatch_launch`. `foreman dispatch finish --json` returns the updated `dispatch_run` and `changed`. `foreman dispatch cancel --json` returns the updated `dispatch_run` and `changed`. Only queued runs can be canceled; already canceled runs are successful no-ops. `foreman dispatch list --json` returns `dispatch_runs`. `foreman dispatch show --json` returns `dispatch_run`. Each run includes run fields, attempts, events, and any attempt-linked session overview.
 
 `foreman dispatch claim` moves a queued run to `claimed` for a selected local tool and records that choice as a run-level event. It does not create attempts, create worktrees, or launch an agent yet.
 
@@ -147,6 +149,8 @@ foreman dispatch show <run-id-or-prefix> --json
 `foreman dispatch launch` starts the claimed tool from the prepared workspace using that same prompt. Codex launches as `codex exec --ask-for-approval never --sandbox workspace-write --color never -`; Claude Code launches as `claude --print --input-format text --output-format stream-json --permission-mode acceptEdits`. The command records `building_prompt` and `launching_agent` attempt state, stores the child `process_id`, passes dispatch IDs through the child environment, and returns immediately.
 
 When a launched child later triggers the Foreman Stop hook, the hook ingests the session as usual and attaches the captured `session_id` to the matching dispatch attempt. Attachment appends one `session_attached` event and is idempotent. Foreman still does not infer success, retry, cancel live processes, or clean up worktrees.
+
+`foreman dispatch finish` explicitly marks a running, session-attached dispatch attempt as `succeeded` or `failed`. It records terminal timestamps and one terminal event. It does not infer completion from hook capture and still does not retry, cancel live processes, or clean up worktrees.
 
 ## Active Work Context
 

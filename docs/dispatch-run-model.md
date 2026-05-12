@@ -136,6 +136,8 @@ The current user-facing dispatch surface reaches the first process-launch slice 
 
 When a launched child later triggers a Foreman Stop hook, the hook captures the base session first, then attaches the captured `session_id` to the matching `launching_agent` attempt and appends one `session_attached` event. Missing or malformed dispatch env, missing rows, status mismatches, and conflicting existing links are logged as degraded hook failures; they do not undo session capture or active chunk linkage. This attachment does not infer success, update run completion, retry, cancel live processes, mutate task YAML, or clean up worktrees.
 
+`foreman dispatch finish` resolves exact IDs or unique prefixes, requires a `running` run with exactly one `launching_agent` attempt, requires that attempt to have a captured `session_id`, then marks the run and attempt `succeeded` or `failed`. It sets terminal timestamps and appends one attempt-level terminal event. Repeating the same terminal status is a successful no-op without a duplicate event. This command is explicit human or runner input; Foreman does not infer completion from hook capture alone.
+
 `foreman dispatch cancel` resolves exact IDs or unique prefixes, changes queued runs to `canceled`, sets `finished_at`, and appends one run-level `canceled` event transactionally. Runs already in `canceled` status are successful no-ops. Other statuses are rejected until a later runner slice defines live stop behavior.
 
 JSON output exposes stable snake_case run fields plus `attempts` and `events`. Attempt rows include `session_id` and hydrate `session` with the same overview shape used by `foreman session list` when the referenced session is still present.

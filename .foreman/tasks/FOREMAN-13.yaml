@@ -1,0 +1,48 @@
+schema_version: 1
+id: FOREMAN-13
+title: Dispatch finish command
+source_ref: null
+description: Finish launched dispatch runs explicitly after hook session attachment.
+status: done
+created_at: 2026-05-12T19:11:21.386Z
+updated_at: 2026-05-12T19:23:19.384Z
+chunks:
+  - id: dispatch-finish-command
+    title: Dispatch finish command
+    spec: |
+      Add an explicit terminal command for dispatch runs after a launched attempt has captured a
+      session through the Stop hook.
+
+      Scope:
+      - Add `foreman dispatch finish <run-id-or-prefix> --status <succeeded|failed>
+        [--message <message>]`.
+      - Resolve run IDs by exact ID or unique prefix.
+      - Allow finishing only `running` runs with exactly one dispatch attempt.
+      - Require the attempt to have a captured `session_id`.
+      - Allow finishing attempts that are still `launching_agent`.
+      - Update the attempt status, `ended_at`, and optional `error_message`.
+      - Update the run status, `updated_at`, and `finished_at`.
+      - Append one attempt-level terminal event.
+      - Treat already-finished runs with the same status as successful no-ops without appending
+        duplicate events.
+      - Return stable JSON with the updated dispatch run detail and `changed`.
+      - Do not infer completion from hook capture, retry, cancel live processes, parse final
+        outcomes, merge, mutate task YAML outside this chunk, or clean up worktrees in this slice.
+
+      Expected outcome:
+      - The dispatch lifecycle can move from launched and session-attached to an explicit terminal
+        state.
+      - Runs without captured sessions cannot be marked terminal accidentally.
+      - Future retry and cleanup slices have a clear terminal run state to build on.
+    status: done
+    stage: review
+    created_at: 2026-05-12T19:11:21.435Z
+    updated_at: 2026-05-12T19:23:19.384Z
+    notes:
+      - ts: 2026-05-12T19:23:19.231Z
+        body: "Implemented explicit dispatch finish: foreman dispatch finish marks session-attached
+          launching attempts as succeeded or failed, records terminal timestamps and one terminal
+          event, stores failure messages on the attempt, rejects unfinished or inconsistent shapes
+          without mutation, and keeps completion explicit rather than inferred from hook capture.
+          Verified with build, focused finish tests, JSON-envelope acceptance coverage, and full
+          suite: 159 pass, 2 skipped."
