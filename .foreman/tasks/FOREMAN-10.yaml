@@ -3,9 +3,9 @@ id: FOREMAN-10
 title: Dispatch prompt contract
 source_ref: null
 description: Build deterministic prompt previews for prepared dispatch attempts before launching agents.
-status: doing
+status: done
 created_at: 2026-05-12T01:03:22.671Z
-updated_at: 2026-05-12T01:27:24.686Z
+updated_at: 2026-05-12T01:32:45.631Z
 chunks:
   - id: dispatch-prompt-preview
     title: Dispatch prompt preview

@@ -1,0 +1,69 @@
+schema_version: 1
+id: FOREMAN-11
+title: Dispatch agent launch
+source_ref: null
+description: Launch prepared dispatch attempts into the selected local agent tool while recording
+  auditable run state.
+status: done
+created_at: 2026-05-12T01:32:52.983Z
+updated_at: 2026-05-12T01:45:08.140Z
+chunks:
+  - id: dispatch-launch-command
+    title: Dispatch launch command
+    spec: |
+      Add the first real dispatch launch command that starts the selected local agent tool from a
+      prepared task worktree and records auditable launch state.
+
+      Scope:
+      - Add `foreman dispatch launch <run-id-or-prefix>`.
+      - Resolve run IDs by exact ID or unique prefix.
+      - Require `remote.origin.url` on the control repo and verify the run `repo_name` matches the
+        current repo.
+      - Require a running run with exactly one attempt in `preparing_workspace`, a workspace path,
+        a known tool, and a launchable prompt from the existing prompt builder.
+      - Build the same deterministic prompt as `foreman dispatch prompt`.
+      - Spawn the selected local tool from the prepared workspace, send the prompt on stdin, and
+        return immediately after recording the child process id.
+      - Record attempt status, `process_id`, and launch events in SQLite without storing the full
+        prompt in event JSON.
+      - Use fake PATH binaries in automated tests; real local Claude/Codex launch remains a manual
+        dogfood step.
+      - Do not wait for completion, parse transcripts, attach sessions, infer success, retry,
+        cancel live processes, mutate task YAML outside this chunk, or clean up worktrees in this
+        slice.
+
+      Expected outcome:
+      - A prepared dispatch attempt can be launched once into Codex or Claude Code.
+      - Duplicate launches, bad statuses, missing attempts, multiple attempts, missing workspaces,
+        repo mismatches, missing task/chunk YAML, and unsupported tools fail explicitly without
+        starting a process.
+      - JSON output exposes the updated dispatch run detail and launch metadata for a future UI.
+    status: done
+    stage: review
+    created_at: 2026-05-12T01:32:56.054Z
+    updated_at: 2026-05-12T01:45:04.447Z
+    notes:
+      - ts: 2026-05-12T01:44:56.974Z
+        body: "Implemented dispatch launch: foreman dispatch launch now validates prepared running attempts,
+          reuses the deterministic prompt builder, starts the selected local Codex or Claude Code
+          command from the recorded workspace, records prompt_built and agent_launched events with
+          process metadata but not prompt text, and rejects duplicate or invalid launches before
+          starting another process. Verified with build, full suite, focused fake-binary launch
+          tests, JSON-envelope coverage, and a local create-claim-prepare-prompt-launch dogfood run
+          using a fake codex binary."
+    dispatch:
+      status: ready
+      risk_level: medium
+      approval_required: none
+      allowed_actions:
+        - edit_source
+        - run_tests
+        - launch_runner
+      blocked_actions:
+        - cleanup_worktree
+        - infer_completion
+    decisions:
+      - id: d_019e1a40-0000-7000-8000-000000000001
+        body: Dispatch launch records process launch state and returns immediately; completion, transcript
+          attachment, success inference, retry, cancellation, and cleanup are separate later slices.
+        decided_at: 2026-05-12T01:33:00.000Z

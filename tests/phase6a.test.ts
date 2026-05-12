@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { Database, SQLQueryBindings } from "bun:sqlite";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,10 +11,11 @@ import { insertDispatchAttempt, insertDispatchEvent, insertDispatchRun } from ".
 const repoRoot = fileURLToPath(new URL("../", import.meta.url));
 const foremanBin = join(repoRoot, "foreman");
 const decoder = new TextDecoder();
+const systemPath = "/usr/bin:/bin";
 const tempDirs: string[] = [];
 
 describe("Phase 6a automated acceptance hardening", () => {
-  test("every JSON-capable command returns a schema_version 1 JSON envelope", () => {
+  test("every JSON-capable command returns a schema_version 1 JSON envelope", async () => {
     const homeDir = createTempDir();
     const repo = createGitRepo(join(createTempDir(), "control"), "git@example.com:mkdevforge/foreman.git");
     const specPath = join(repo, "spec.md");
@@ -94,6 +95,20 @@ describe("Phase 6a automated acceptance hardening", () => {
       "changed"
     ]);
     expectJsonCommand(repo, homeDir, ["dispatch", "prompt", claimedDispatchRun.dispatch_run.id], ["dispatch_prompt"]);
+    const fakeBin = createTempDir();
+    const launchCapture = createTempDir();
+    writeFakeAgentBinary(fakeBin, "codex");
+    expectJsonCommand(
+      repo,
+      homeDir,
+      ["dispatch", "launch", claimedDispatchRun.dispatch_run.id],
+      ["dispatch_run", "dispatch_launch"],
+      {
+        PATH: `${fakeBin}:${systemPath}`,
+        FOREMAN_FAKE_LAUNCH_CAPTURE: launchCapture
+      }
+    );
+    await waitForFile(join(launchCapture, "stdin"));
 
     seedAcceptanceSessions(homeDir, repo);
     seedAcceptanceDispatchRuns(homeDir);
@@ -138,8 +153,14 @@ describe("Phase 6a automated acceptance hardening", () => {
   });
 });
 
-function expectJsonCommand(cwd: string, homeDir: string, argv: string[], requiredKeys: string[]): any {
-  const result = runForeman(cwd, homeDir, [...argv, "--json"]);
+function expectJsonCommand(
+  cwd: string,
+  homeDir: string,
+  argv: string[],
+  requiredKeys: string[],
+  env: Record<string, string | undefined> = {}
+): any {
+  const result = runForeman(cwd, homeDir, [...argv, "--json"], env);
   let parsed: any;
 
   expect(result.exitCode, `${argv.join(" ")} exit code`).toBe(0);
@@ -324,11 +345,11 @@ function seedSession(
   }
 }
 
-function runForeman(cwd: string, homeDir: string, argv: string[]) {
+function runForeman(cwd: string, homeDir: string, argv: string[], env: Record<string, string | undefined> = {}) {
   const result = Bun.spawnSync({
     cmd: [process.execPath, foremanBin, ...argv],
     cwd,
-    env: { ...process.env, HOME: homeDir },
+    env: { ...process.env, ...env, HOME: homeDir },
     stdout: "pipe",
     stderr: "pipe"
   });
@@ -338,6 +359,35 @@ function runForeman(cwd: string, homeDir: string, argv: string[]) {
     stdout: decodeOutput(result.stdout),
     stderr: decodeOutput(result.stderr)
   };
+}
+
+function writeFakeAgentBinary(dir: string, name: string): string {
+  mkdirSync(dir, { recursive: true });
+  const path = join(dir, name);
+  writeFileSync(
+    path,
+    [
+      "#!/usr/bin/env sh",
+      "set -eu",
+      ": \"${FOREMAN_FAKE_LAUNCH_CAPTURE:?}\"",
+      "mkdir -p \"$FOREMAN_FAKE_LAUNCH_CAPTURE\"",
+      "cat > \"$FOREMAN_FAKE_LAUNCH_CAPTURE/stdin\""
+    ].join("\n"),
+    "utf8"
+  );
+  chmodSync(path, 0o755);
+  return path;
+}
+
+async function waitForFile(path: string): Promise<void> {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    if (existsSync(path)) {
+      return;
+    }
+    await Bun.sleep(20);
+  }
+
+  throw new Error(`timed out waiting for ${path}`);
 }
 
 function createGitRepo(path: string, remote?: string): string {

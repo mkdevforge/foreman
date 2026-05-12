@@ -1,6 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { accessSync, constants } from "node:fs";
-import { delimiter, join } from "node:path";
+import { resolveExecutableCommand } from "../tools/executable";
 import type { ParsedSession } from "./types";
 
 export const DEFAULT_SUMMARY_MAX_TOKENS = 50_000;
@@ -286,19 +285,7 @@ export function resolveHarnessCommand(
   binaryName: "claude" | "codex",
   env: Record<string, string | undefined> = process.env
 ): string {
-  const pathMatch = findExecutableOnPath(binaryName, env.PATH, env.HOME);
-  if (pathMatch !== null) {
-    return pathMatch;
-  }
-
-  for (const dir of fallbackUserBinDirs(env.HOME)) {
-    const candidate = join(dir, binaryName);
-    if (isExecutableFile(candidate)) {
-      return candidate;
-    }
-  }
-
-  return binaryName;
+  return resolveExecutableCommand(binaryName, env);
 }
 
 function extractHarnessSummary(command: HarnessCommand, stdout: string): string {
@@ -381,60 +368,6 @@ function childEnvironment(env: Record<string, string | undefined>): Record<strin
   child[FOREMAN_SUMMARY_CHILD_ENV] = "1";
   child.NO_COLOR = "1";
   return child;
-}
-
-function findExecutableOnPath(binaryName: string, pathValue: string | undefined, homeDir: string | undefined): string | null {
-  if (pathValue === undefined || pathValue.length === 0) {
-    return null;
-  }
-
-  for (const rawEntry of pathValue.split(delimiter)) {
-    if (rawEntry.length === 0) {
-      continue;
-    }
-
-    const entry = expandHome(rawEntry, homeDir);
-    const candidate = join(entry, binaryName);
-    if (isExecutableFile(candidate)) {
-      return candidate;
-    }
-  }
-
-  return null;
-}
-
-function fallbackUserBinDirs(homeDir: string | undefined): string[] {
-  if (homeDir === undefined || homeDir.length === 0) {
-    return [];
-  }
-
-  return [
-    join(homeDir, ".local", "bin"),
-    join(homeDir, ".bun", "bin"),
-    join(homeDir, ".npm-global", "bin"),
-    join(homeDir, "Library", "pnpm")
-  ];
-}
-
-function expandHome(pathEntry: string, homeDir: string | undefined): string {
-  if (pathEntry === "~") {
-    return homeDir ?? pathEntry;
-  }
-
-  if (pathEntry.startsWith("~/") && homeDir !== undefined && homeDir.length > 0) {
-    return join(homeDir, pathEntry.slice(2));
-  }
-
-  return pathEntry;
-}
-
-function isExecutableFile(path: string): boolean {
-  try {
-    accessSync(path, constants.X_OK);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 function buildElisionMarker(elidedChars: number): string {

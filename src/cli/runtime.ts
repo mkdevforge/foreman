@@ -13,6 +13,7 @@ import {
   type DispatchTool
 } from "../dispatch/claim";
 import { createQueuedDispatchRun } from "../dispatch/create";
+import { launchPreparedDispatchRun, type DispatchLaunch, type LaunchDispatchRunResult } from "../dispatch/launch";
 import { prepareClaimedDispatchRun, type PrepareDispatchRunResult } from "../dispatch/prepare";
 import { buildDispatchPrompt, type BuildDispatchPromptResult, type DispatchPrompt } from "../dispatch/prompt";
 import {
@@ -623,7 +624,7 @@ function createCatalogCommand(json: boolean, io: CliIo): Command {
 
 function createDispatchCommand(json: boolean, io: CliIo): Command {
   const dispatch = configureCommand(new Command("dispatch"), io)
-    .description("Create, claim, prepare, prompt, cancel, and query persisted dispatch runs.")
+    .description("Create, claim, prepare, prompt, launch, cancel, and query persisted dispatch runs.")
     .action(() => {
       throw new CliError(2, "missing_command", "missing dispatch command");
     });
@@ -780,6 +781,73 @@ function createDispatchCommand(json: boolean, io: CliIo): Command {
       }
 
       writeData(json, io, renderDispatchPrompt(result), { dispatch_prompt: toJsonDispatchPrompt(result.dispatchPrompt) });
+    });
+
+  configureCommand(dispatch.command("launch"), io)
+    .description("Launch a prepared dispatch attempt in its recorded workspace.")
+    .argument("<run-id-or-prefix>")
+    .action((prefix: string) => {
+      const controlRepoRoot = findRepoRoot();
+      const repoRemote = getRequiredGitOriginRemote(controlRepoRoot);
+      const repoName = repoNameFromGitRemote(repoRemote);
+      const detail = withForemanDatabase((db) => getDispatchRunDetailById(db, resolveDispatchRunIdOrThrow(db, prefix)));
+
+      if (detail === null) {
+        throw new CliError(1, "dispatch_run_not_found", `dispatch run '${prefix}' was not found`);
+      }
+
+      const task = readTask(controlRepoRoot, detail.run.task_id);
+      const chunk = findChunkForDispatchRunOrThrow(task, detail);
+      const promptResult = buildDispatchPrompt(detail, task, chunk, { repoName });
+
+      if (promptResult.kind === "repo_mismatch") {
+        throw new CliError(
+          2,
+          "dispatch_repo_mismatch",
+          `dispatch run '${detail.run.id}' belongs to repo '${promptResult.expectedRepoName}', not '${promptResult.actualRepoName ?? "null"}'`,
+          { dispatch_run: toJsonDispatchRunDetail(detail), repo_name: promptResult.actualRepoName }
+        );
+      }
+
+      if (promptResult.kind === "not_promptable") {
+        throw new CliError(
+          2,
+          "dispatch_run_not_launchable",
+          `dispatch run '${detail.run.id}' cannot be launched: ${promptResult.reason}`,
+          { dispatch_run: toJsonDispatchRunDetail(detail), reason: promptResult.reason }
+        );
+      }
+
+      const result = withForemanDatabase((db) =>
+        launchPreparedDispatchRun(db, detail.run.id, promptResult.dispatchPrompt, { env: process.env })
+      );
+
+      if (result.kind === "missing") {
+        throw new CliError(1, "dispatch_run_not_found", `dispatch run '${prefix}' was not found`);
+      }
+
+      if (result.kind === "not_launchable") {
+        throw new CliError(
+          2,
+          "dispatch_run_not_launchable",
+          `dispatch run '${result.detail.run.id}' cannot be launched: ${result.reason}`,
+          { dispatch_run: toJsonDispatchRunDetail(result.detail), reason: result.reason }
+        );
+      }
+
+      if (result.kind === "launch_failed") {
+        throw new CliError(
+          1,
+          "dispatch_launch_failed",
+          `dispatch run '${result.detail.run.id}' launch failed: ${result.errorMessage}`,
+          { dispatch_run: toJsonDispatchRunDetail(result.detail), error: result.errorMessage }
+        );
+      }
+
+      writeData(json, io, renderDispatchLaunch(result), {
+        dispatch_run: toJsonDispatchRunDetail(result.detail),
+        dispatch_launch: toJsonDispatchLaunch(result.launch)
+      });
     });
 
   configureCommand(dispatch.command("cancel"), io)
@@ -1775,6 +1843,21 @@ function toJsonDispatchPrompt(prompt: DispatchPrompt) {
   };
 }
 
+function toJsonDispatchLaunch(launch: DispatchLaunch) {
+  return {
+    run_id: launch.run_id,
+    attempt_id: launch.attempt_id,
+    tool: launch.tool,
+    command: launch.command,
+    args: launch.args,
+    cwd: launch.cwd,
+    process_id: launch.process_id,
+    prompt_chars: launch.prompt_chars,
+    prompt_sha256: launch.prompt_sha256,
+    launched_at: launch.launched_at
+  };
+}
+
 function toJsonDispatchAttempt(attempt: DispatchAttemptDetail) {
   return {
     id: attempt.id,
@@ -2247,6 +2330,18 @@ function renderDispatchPrepare(
 
 function renderDispatchPrompt(result: Exclude<BuildDispatchPromptResult, { kind: "repo_mismatch" | "not_promptable" }>): string {
   return result.dispatchPrompt.prompt;
+}
+
+function renderDispatchLaunch(
+  result: Exclude<LaunchDispatchRunResult, { kind: "missing" | "not_launchable" | "launch_failed" }>
+): string {
+  return [
+    `Launched dispatch run ${result.detail.run.id}.`,
+    `Tool: ${result.launch.tool}`,
+    `Process: ${result.launch.process_id}`,
+    `Workspace: ${result.launch.cwd}`,
+    ""
+  ].join("\n");
 }
 
 function renderDispatchRunShow(detail: DispatchRunDetail): string {

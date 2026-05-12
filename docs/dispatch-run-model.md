@@ -113,12 +113,13 @@ Readiness evaluation should run against the control repo's YAML before a dispatc
 
 ## CLI Surface
 
-The initial user-facing dispatch surface is deliberately below the runner layer:
+The current user-facing dispatch surface reaches the first process-launch slice but still keeps completion and reconciliation separate:
 
 - `foreman dispatch create <task>/<chunk> [--stage <stage>]`
 - `foreman dispatch claim <run-id-or-prefix> --tool <claude-code|codex>`
 - `foreman dispatch prepare <run-id-or-prefix>`
 - `foreman dispatch prompt <run-id-or-prefix>`
+- `foreman dispatch launch <run-id-or-prefix>`
 - `foreman dispatch cancel <run-id-or-prefix>`
 - `foreman dispatch list [--task <id>] [--chunk <id>] [--status <status>]`
 - `foreman dispatch show <run-id-or-prefix>`
@@ -130,6 +131,8 @@ The initial user-facing dispatch surface is deliberately below the runner layer:
 `foreman dispatch prepare` resolves exact IDs or unique prefixes, verifies the current control repo's derived `repo_name` matches the run, creates or reuses the task-level sibling worktree, changes the run from `claimed` to `running`, inserts the first `preparing_workspace` attempt, and appends one attempt-level `attempt_prepared` event. It still does not launch agents, stream output, attach sessions, mutate task YAML, or clean up worktrees.
 
 `foreman dispatch prompt` resolves exact IDs or unique prefixes, verifies the run belongs to the current control repo, loads task/chunk context from repo YAML, and renders the prompt that a later launch command should pass to the selected agent. The command is read-only: it does not append dispatch events, change attempt status, launch agents, attach sessions, mutate task YAML, or clean up worktrees.
+
+`foreman dispatch launch` resolves exact IDs or unique prefixes, verifies the run belongs to the current control repo, loads the same task/chunk prompt context, requires exactly one `preparing_workspace` attempt, and starts the selected local tool from the attempt workspace. Codex launches as `codex exec --ask-for-approval never --sandbox workspace-write --color never -`; Claude Code launches as `claude --print --input-format text --output-format stream-json --permission-mode acceptEdits`. The prompt is passed on stdin. The command records `prompt_built` and `agent_launched` events, moves the attempt through `building_prompt` to `launching_agent`, stores `process_id`, and returns immediately. Event JSON stores command metadata plus prompt size/hash, not the full prompt. The command does not wait for completion, parse transcripts, attach sessions, infer success, mutate task YAML, retry, cancel live processes, or clean up worktrees.
 
 `foreman dispatch cancel` resolves exact IDs or unique prefixes, changes queued runs to `canceled`, sets `finished_at`, and appends one run-level `canceled` event transactionally. Runs already in `canceled` status are successful no-ops. Other statuses are rejected until a later runner slice defines live stop behavior.
 

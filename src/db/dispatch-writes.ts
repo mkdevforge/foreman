@@ -149,13 +149,21 @@ export function updateDispatchAttemptStatus(
   input: {
     id: string;
     status: string;
+    processId?: number | null;
     endedAt?: string | null;
     errorMessage?: string | null;
     sessionId?: string | null;
+    expectedStatus?: string;
   }
 ): number {
   const assignments = ["status = ?"];
   const params: SQLQueryBindings[] = [input.status];
+  const whereClauses = ["id = ?"];
+
+  if ("processId" in input) {
+    assignments.push("process_id = ?");
+    params.push(input.processId ?? null);
+  }
 
   if ("endedAt" in input) {
     assignments.push("ended_at = ?");
@@ -173,7 +181,13 @@ export function updateDispatchAttemptStatus(
   }
 
   params.push(input.id);
-  return runSql(db, `UPDATE dispatch_attempts SET ${assignments.join(", ")} WHERE id = ?`, params);
+
+  if (input.expectedStatus !== undefined) {
+    whereClauses.push("status = ?");
+    params.push(input.expectedStatus);
+  }
+
+  return runSql(db, `UPDATE dispatch_attempts SET ${assignments.join(", ")} WHERE ${whereClauses.join(" AND ")}`, params);
 }
 
 export function insertDispatchEvent(db: Database, input: InsertDispatchEventInput): number {
