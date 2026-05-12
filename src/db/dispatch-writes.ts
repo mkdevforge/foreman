@@ -190,6 +190,27 @@ export function updateDispatchAttemptStatus(
   return runSql(db, `UPDATE dispatch_attempts SET ${assignments.join(", ")} WHERE ${whereClauses.join(" AND ")}`, params);
 }
 
+export function attachDispatchAttemptSession(
+  db: Database,
+  input: {
+    id: string;
+    runId: string;
+    expectedStatus: string;
+    sessionId: string;
+  }
+): number {
+  return runSql(
+    db,
+    `UPDATE dispatch_attempts
+      SET session_id = ?
+      WHERE id = ?
+        AND run_id = ?
+        AND status = ?
+        AND session_id IS NULL`,
+    [input.sessionId, input.id, input.runId, input.expectedStatus]
+  );
+}
+
 export function insertDispatchEvent(db: Database, input: InsertDispatchEventInput): number {
   return runSql(
     db,

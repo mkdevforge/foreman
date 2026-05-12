@@ -4,6 +4,12 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { realpathSync } from "node:fs";
 import { CliError, type ExitCode } from "../cli/errors";
+import { attachDispatchSession } from "../dispatch/attach";
+import {
+  FOREMAN_DISPATCH_ATTEMPT_ID_ENV,
+  FOREMAN_DISPATCH_CHILD_ENV,
+  FOREMAN_DISPATCH_RUN_ID_ENV
+} from "../dispatch/env";
 import { openForemanDatabase } from "../db/client";
 import { linkSessionChunk, updateSessionCost, upsertSessionSummary } from "../db/session-writes";
 import {
@@ -78,6 +84,11 @@ interface StopPayloadResolution {
   transcriptPath: string;
 }
 
+type DispatchHookContext =
+  | { kind: "none" }
+  | { kind: "context"; runId: string; attemptId: string }
+  | { kind: "malformed"; error: string };
+
 export async function runForemanHook(name: HookName, argv: string[], io: HookIo, options: HookRuntimeOptions = {}): Promise<HookResult> {
   const globals = extractGlobalFlags(argv);
 
@@ -124,6 +135,7 @@ export async function runForemanHook(name: HookName, argv: string[], io: HookIo,
     baseResult = ingestParsedSession(db, parsed, ingestOptions(parsed, options));
     updateDerivedCost(db, parsed, baseResult.session_id);
     linkActiveContextIfEligible(db, parsed, baseResult.session_id, source, payload, options);
+    attachDispatchContextIfPresent(db, baseResult.session_id, source, payload, options);
   } catch (error) {
     appendHookError(options.homeDir, { source, phase: "ingest", error, payload });
     db?.close();
@@ -139,6 +151,100 @@ export async function runForemanHook(name: HookName, argv: string[], io: HookIo,
   }
 
   return { exitCode: 0 };
+}
+
+function attachDispatchContextIfPresent(
+  db: Database,
+  sessionId: string,
+  source: HookSource,
+  payload: unknown,
+  options: HookRuntimeOptions
+): void {
+  const dispatchContext = resolveDispatchHookContext(options.env ?? process.env);
+  if (dispatchContext.kind === "none") {
+    return;
+  }
+
+  if (dispatchContext.kind === "malformed") {
+    appendHookError(options.homeDir, {
+      source,
+      phase: "dispatch_attachment",
+      error: new Error(dispatchContext.error),
+      payload
+    });
+    return;
+  }
+
+  let result: ReturnType<typeof attachDispatchSession>;
+  try {
+    result = attachDispatchSession(
+      db,
+      {
+        runId: dispatchContext.runId,
+        attemptId: dispatchContext.attemptId,
+        sessionId
+      },
+      {
+        idGenerator: options.idGenerator,
+        now: options.now
+      }
+    );
+  } catch (error) {
+    appendHookError(options.homeDir, {
+      source,
+      phase: "dispatch_attachment",
+      error,
+      payload
+    });
+    return;
+  }
+
+  if (result.kind === "attached" || result.kind === "already_attached") {
+    return;
+  }
+
+  const message =
+    result.kind === "missing"
+      ? `dispatch run '${dispatchContext.runId}' was not found`
+      : `dispatch attempt '${dispatchContext.attemptId}' is not attachable: ${result.reason}`;
+  appendHookError(options.homeDir, {
+    source,
+    phase: "dispatch_attachment",
+    error: new Error(message),
+    payload
+  });
+}
+
+function resolveDispatchHookContext(env: Record<string, string | undefined>): DispatchHookContext {
+  const child = env[FOREMAN_DISPATCH_CHILD_ENV];
+  const runId = env[FOREMAN_DISPATCH_RUN_ID_ENV];
+  const attemptId = env[FOREMAN_DISPATCH_ATTEMPT_ID_ENV];
+
+  if (child === undefined && runId === undefined && attemptId === undefined) {
+    return { kind: "none" };
+  }
+
+  if (child !== "1") {
+    return { kind: "malformed", error: `${FOREMAN_DISPATCH_CHILD_ENV} must be 1 for dispatch hook attachment` };
+  }
+
+  if (runId === undefined || runId.trim() === "") {
+    return { kind: "malformed", error: `${FOREMAN_DISPATCH_RUN_ID_ENV} is required for dispatch hook attachment` };
+  }
+
+  if (attemptId === undefined || attemptId.trim() === "") {
+    return { kind: "malformed", error: `${FOREMAN_DISPATCH_ATTEMPT_ID_ENV} is required for dispatch hook attachment` };
+  }
+
+  if (!runId.startsWith("run_")) {
+    return { kind: "malformed", error: `${FOREMAN_DISPATCH_RUN_ID_ENV} must start with run_` };
+  }
+
+  if (!attemptId.startsWith("attempt_")) {
+    return { kind: "malformed", error: `${FOREMAN_DISPATCH_ATTEMPT_ID_ENV} must start with attempt_` };
+  }
+
+  return { kind: "context", runId, attemptId };
 }
 
 export const runHookStub = runForemanHook;

@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { openForemanDatabase } from "../src/db/client";
+import { getDispatchRunDetailById } from "../src/db/dispatch-queries";
+import { insertDispatchAttempt, insertDispatchEvent, insertDispatchRun } from "../src/db/dispatch-writes";
 import { getSessionSummary } from "../src/db/session-queries";
 import { writeActiveContext } from "../src/store/active";
 import { initializeForemanRepo, addTask, addChunk } from "../src/store/task-store";
@@ -73,9 +75,11 @@ describe("Phase 4 Stop hook runtime and active linkage", () => {
 
   test("summary failures log but keep captured session and active link", async () => {
     const env = setupHookEnv();
+    const dispatch = seedLaunchedDispatchAttempt(env.homeDir);
 
     await runHook("foreman-hook-stop-claude-code", claudePayload(env.projectRepo), env.homeDir, {
-      summaryProvider: failingSummaryProvider()
+      summaryProvider: failingSummaryProvider(),
+      env: dispatchHookEnv(dispatch)
     });
     const { db } = openDb(env.homeDir);
 
@@ -83,7 +87,88 @@ describe("Phase 4 Stop hook runtime and active linkage", () => {
       expect(countRows(db, "sessions")).toBe(1);
       expect(countRows(db, "session_chunks")).toBe(1);
       expect(countRows(db, "summaries")).toBe(0);
+      expect(getDispatchRunDetailById(db, dispatch.runId)?.attempts[0].session_id).toBe(
+        "00000000-0000-7000-8000-000000000001"
+      );
       expect(readHookLog(env.homeDir)).toContain("\"phase\":\"summary\"");
+    } finally {
+      db.close();
+    }
+  });
+
+  test("dispatch hook env attaches captured sessions idempotently", async () => {
+    const env = setupHookEnv();
+    const dispatch = seedLaunchedDispatchAttempt(env.homeDir);
+    const idGenerator = deterministicIds();
+
+    const first = await runHook("foreman-hook-stop-claude-code", claudePayload(env.projectRepo), env.homeDir, {
+      idGenerator,
+      env: dispatchHookEnv(dispatch)
+    });
+    const interim = openDb(env.homeDir).db;
+    try {
+      interim.run("UPDATE dispatch_runs SET status = ? WHERE id = ?", ["succeeded", dispatch.runId]);
+      interim.run("UPDATE dispatch_attempts SET status = ? WHERE id = ?", ["succeeded", dispatch.attemptId]);
+    } finally {
+      interim.close();
+    }
+    const second = await runHook("foreman-hook-stop-claude-code", claudePayload(env.projectRepo), env.homeDir, {
+      idGenerator,
+      env: dispatchHookEnv(dispatch)
+    });
+    const { db } = openDb(env.homeDir);
+
+    try {
+      const detail = getDispatchRunDetailById(db, dispatch.runId);
+      expect(first.exitCode).toBe(0);
+      expect(second.exitCode).toBe(0);
+      expect(detail?.attempts[0]).toMatchObject({
+        id: dispatch.attemptId,
+        status: "succeeded",
+        session_id: "00000000-0000-7000-8000-000000000001"
+      });
+      expect(detail?.events.map((event) => event.type)).toEqual(["agent_launched", "session_attached"]);
+      expect(countRows(db, "session_chunks")).toBe(1);
+    } finally {
+      db.close();
+    }
+  });
+
+  test("dispatch attachment failures log but keep normal hook capture", async () => {
+    const env = setupHookEnv();
+    const dispatch = seedLaunchedDispatchAttempt(env.homeDir, { attemptStatus: "preparing_workspace" });
+
+    await runHook("foreman-hook-stop-claude-code", claudePayload(env.projectRepo), env.homeDir, {
+      env: dispatchHookEnv(dispatch)
+    });
+    const { db } = openDb(env.homeDir);
+
+    try {
+      expect(countRows(db, "sessions")).toBe(1);
+      expect(countRows(db, "session_chunks")).toBe(1);
+      expect(getDispatchRunDetailById(db, dispatch.runId)?.attempts[0].session_id).toBeNull();
+      expect(readHookLog(env.homeDir)).toContain("\"phase\":\"dispatch_attachment\"");
+      expect(readHookLog(env.homeDir)).toContain("attempt_status_not_launching_agent");
+    } finally {
+      db.close();
+    }
+  });
+
+  test("malformed dispatch hook env logs without blocking ingestion", async () => {
+    const env = setupHookEnv();
+
+    await runHook("foreman-hook-stop-claude-code", claudePayload(env.projectRepo), env.homeDir, {
+      env: {
+        FOREMAN_DISPATCH_CHILD: "1",
+        FOREMAN_DISPATCH_RUN_ID: "not-a-run",
+        FOREMAN_DISPATCH_ATTEMPT_ID: "attempt_019fd000-0000-7000-8000-000000000001_1"
+      }
+    });
+    const { db } = openDb(env.homeDir);
+
+    try {
+      expect(countRows(db, "sessions")).toBe(1);
+      expect(readHookLog(env.homeDir)).toContain("FOREMAN_DISPATCH_RUN_ID must start with run_");
     } finally {
       db.close();
     }
@@ -165,6 +250,7 @@ async function runHook(
     summaryProvider?: SummaryProvider;
     idGenerator?: () => string;
     codexSessionsRoot?: string;
+    env?: Record<string, string | undefined>;
   } = {}
 ) {
   return runHookRaw(name, JSON.stringify(payload), homeDir, options);
@@ -178,6 +264,7 @@ async function runHookRaw(
     summaryProvider?: SummaryProvider;
     idGenerator?: () => string;
     codexSessionsRoot?: string;
+    env?: Record<string, string | undefined>;
   } = {}
 ) {
   let stdout = "";
@@ -201,7 +288,8 @@ async function runHookRaw(
       machine: "devbox",
       idGenerator: options.idGenerator ?? deterministicIds(),
       now: () => "2026-05-06T12:00:00.000Z",
-      codexSessionsRoot: options.codexSessionsRoot
+      codexSessionsRoot: options.codexSessionsRoot,
+      env: options.env
     }
   );
 
@@ -242,6 +330,63 @@ function failingSummaryProvider(): SummaryProvider {
     async summarize() {
       throw new Error("summary unavailable");
     }
+  };
+}
+
+function seedLaunchedDispatchAttempt(
+  homeDir: string,
+  options: { attemptStatus?: string; sessionId?: string | null } = {}
+): { runId: string; attemptId: string } {
+  const runId = "run_019fd000-0000-7000-8000-000000000001";
+  const attemptId = "attempt_019fd000-0000-7000-8000-000000000001_1";
+  const db = openForemanDatabase({ homeDir });
+
+  try {
+    insertDispatchRun(db, {
+      id: runId,
+      repoName: "foreman",
+      taskId: "FOREMAN-12",
+      chunkId: "dispatch-hook-attachment",
+      requestedStage: "implement",
+      status: "running",
+      requestedBy: null,
+      source: "cli",
+      createdAt: "2026-05-06T12:00:00.000Z",
+      updatedAt: "2026-05-06T12:00:00.000Z"
+    });
+    insertDispatchAttempt(db, {
+      id: attemptId,
+      runId,
+      attemptNumber: 1,
+      status: options.attemptStatus ?? "launching_agent",
+      tool: "claude-code",
+      workspacePath: null,
+      worktreeBranch: "foreman/FOREMAN-12",
+      processId: 123,
+      startedAt: "2026-05-06T12:00:00.000Z",
+      sessionId: options.sessionId ?? null
+    });
+    insertDispatchEvent(db, {
+      id: "evt_019fd000-0000-7000-8000-000000000001",
+      runId,
+      attemptId,
+      ts: "2026-05-06T11:59:59.000Z",
+      type: "agent_launched",
+      message: "Seeded launch event.",
+      dataJson: "{}"
+    });
+  } finally {
+    db.close();
+  }
+
+  return { runId, attemptId };
+}
+
+function dispatchHookEnv(dispatch: { runId: string; attemptId: string }): Record<string, string> {
+  return {
+    FOREMAN_DISPATCH_CHILD: "1",
+    FOREMAN_DISPATCH_RUN_ID: dispatch.runId,
+    FOREMAN_DISPATCH_ATTEMPT_ID: dispatch.attemptId
   };
 }
 

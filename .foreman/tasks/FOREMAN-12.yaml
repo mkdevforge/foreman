@@ -1,0 +1,45 @@
+schema_version: 1
+id: FOREMAN-12
+title: Dispatch session attachment
+source_ref: null
+description: Attach launched dispatch attempts to captured hook sessions without inferring completion.
+status: done
+created_at: 2026-05-12T18:44:27.183Z
+updated_at: 2026-05-12T18:55:06.176Z
+chunks:
+  - id: dispatch-hook-attachment
+    title: Dispatch hook attachment
+    spec: |
+      Attach sessions captured by Stop hooks back to launched dispatch attempts using the launch
+      environment variables.
+
+      Scope:
+      - Read `FOREMAN_DISPATCH_CHILD`, `FOREMAN_DISPATCH_RUN_ID`, and
+        `FOREMAN_DISPATCH_ATTEMPT_ID` inside the Stop hook runtime.
+      - After base session ingestion succeeds, attach the captured `session_id` to the matching
+        dispatch attempt and append one `session_attached` dispatch event.
+      - Require the attempt to belong to the run and to still be in the launched state.
+      - Make attachment idempotent when the same hook payload is replayed.
+      - Treat missing env as normal non-dispatch hook capture.
+      - Log malformed env, missing rows, status mismatches, and conflicting pre-existing
+        session links as degraded dispatch attachment failures while still exiting 0.
+      - Preserve active chunk linkage and summary behavior from Phase 4.
+      - Do not infer success, update run completion, retry, cancel processes, parse final
+        outcomes, mutate task YAML outside this chunk, or clean up worktrees in this slice.
+
+      Expected outcome:
+      - A launched dispatch attempt can be correlated to the session captured by the existing
+        Claude Code or Codex Stop hook.
+      - Re-running the same hook does not duplicate events or change already attached attempts.
+      - Normal manually-run hook ingestion remains unchanged when no dispatch env is present.
+    status: done
+    stage: review
+    created_at: 2026-05-12T18:44:32.895Z
+    updated_at: 2026-05-12T18:55:06.176Z
+    notes:
+      - ts: 2026-05-12T18:54:23.171Z
+        body: "Implemented dispatch session attachment through Stop hooks: launched child env now shares
+          dispatch IDs, hooks attach captured sessions to launching attempts idempotently, append
+          session_attached events, and log malformed or unattachable dispatch context without
+          blocking base session capture, active linkage, or summaries. Verified with build, focused
+          hook tests, and full suite: 155 pass, 2 skipped."

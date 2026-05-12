@@ -7,12 +7,19 @@ import { getDispatchRunDetailById, type DispatchAttemptDetail, type DispatchRunD
 import { insertDispatchEvent, updateDispatchAttemptStatus, updateDispatchRunStatus } from "../db/dispatch-writes";
 import { findExecutableCommand } from "../tools/executable";
 import { DISPATCH_TOOLS, type DispatchTool } from "./claim";
+import {
+  FOREMAN_DISPATCH_ATTEMPT_ID_ENV,
+  FOREMAN_DISPATCH_CHILD_ENV,
+  FOREMAN_DISPATCH_CHUNK_ID_ENV,
+  FOREMAN_DISPATCH_RUN_ID_ENV,
+  FOREMAN_DISPATCH_TASK_ID_ENV
+} from "./env";
 import type { DispatchPrompt } from "./prompt";
 
 type IdGenerator = () => string;
 type NowGenerator = () => string;
 
-export const FOREMAN_DISPATCH_CHILD_ENV = "FOREMAN_DISPATCH_CHILD";
+export { FOREMAN_DISPATCH_CHILD_ENV } from "./env";
 
 export interface DispatchLaunch {
   run_id: string;
@@ -390,10 +397,10 @@ function childEnvironment(
   }
 
   child[FOREMAN_DISPATCH_CHILD_ENV] = "1";
-  child.FOREMAN_DISPATCH_RUN_ID = prompt.run_id;
-  child.FOREMAN_DISPATCH_ATTEMPT_ID = prompt.attempt_id;
-  child.FOREMAN_DISPATCH_TASK_ID = prompt.task_id;
-  child.FOREMAN_DISPATCH_CHUNK_ID = prompt.chunk_id;
+  child[FOREMAN_DISPATCH_RUN_ID_ENV] = prompt.run_id;
+  child[FOREMAN_DISPATCH_ATTEMPT_ID_ENV] = prompt.attempt_id;
+  child[FOREMAN_DISPATCH_TASK_ID_ENV] = prompt.task_id;
+  child[FOREMAN_DISPATCH_CHUNK_ID_ENV] = prompt.chunk_id;
   child.NO_COLOR = "1";
   return child;
 }

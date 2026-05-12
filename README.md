@@ -144,7 +144,9 @@ foreman dispatch show <run-id-or-prefix> --json
 
 `foreman dispatch prompt` builds the deterministic launch prompt for a prepared run. Text output is the prompt body; JSON output includes prompt metadata plus the prompt text. It is read-only and does not launch agents, mutate SQLite, or mutate task YAML.
 
-`foreman dispatch launch` starts the claimed tool from the prepared workspace using that same prompt. Codex launches as `codex exec --ask-for-approval never --sandbox workspace-write --color never -`; Claude Code launches as `claude --print --input-format text --output-format stream-json --permission-mode acceptEdits`. The command records `building_prompt` and `launching_agent` attempt state, stores the child `process_id`, and returns immediately. It does not wait for completion, parse transcripts, attach sessions, infer success, mutate task YAML, retry, cancel live processes, or clean up worktrees.
+`foreman dispatch launch` starts the claimed tool from the prepared workspace using that same prompt. Codex launches as `codex exec --ask-for-approval never --sandbox workspace-write --color never -`; Claude Code launches as `claude --print --input-format text --output-format stream-json --permission-mode acceptEdits`. The command records `building_prompt` and `launching_agent` attempt state, stores the child `process_id`, passes dispatch IDs through the child environment, and returns immediately.
+
+When a launched child later triggers the Foreman Stop hook, the hook ingests the session as usual and attaches the captured `session_id` to the matching dispatch attempt. Attachment appends one `session_attached` event and is idempotent. Foreman still does not infer success, retry, cancel live processes, or clean up worktrees.
 
 ## Active Work Context
 
