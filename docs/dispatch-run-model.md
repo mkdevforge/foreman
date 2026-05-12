@@ -118,6 +118,7 @@ The initial user-facing dispatch surface is deliberately below the runner layer:
 - `foreman dispatch create <task>/<chunk> [--stage <stage>]`
 - `foreman dispatch claim <run-id-or-prefix> --tool <claude-code|codex>`
 - `foreman dispatch prepare <run-id-or-prefix>`
+- `foreman dispatch prompt <run-id-or-prefix>`
 - `foreman dispatch cancel <run-id-or-prefix>`
 - `foreman dispatch list [--task <id>] [--chunk <id>] [--status <status>]`
 - `foreman dispatch show <run-id-or-prefix>`
@@ -127,6 +128,8 @@ The initial user-facing dispatch surface is deliberately below the runner layer:
 `foreman dispatch claim` resolves exact IDs or unique prefixes, changes queued runs to `claimed`, and appends one run-level `claimed` event with the selected tool. This is only a local queue ownership step; it does not create attempts, create worktrees, launch agents, mutate task YAML, or attach sessions.
 
 `foreman dispatch prepare` resolves exact IDs or unique prefixes, verifies the current control repo's derived `repo_name` matches the run, creates or reuses the task-level sibling worktree, changes the run from `claimed` to `running`, inserts the first `preparing_workspace` attempt, and appends one attempt-level `attempt_prepared` event. It still does not launch agents, stream output, attach sessions, mutate task YAML, or clean up worktrees.
+
+`foreman dispatch prompt` resolves exact IDs or unique prefixes, verifies the run belongs to the current control repo, loads task/chunk context from repo YAML, and renders the prompt that a later launch command should pass to the selected agent. The command is read-only: it does not append dispatch events, change attempt status, launch agents, attach sessions, mutate task YAML, or clean up worktrees.
 
 `foreman dispatch cancel` resolves exact IDs or unique prefixes, changes queued runs to `canceled`, sets `finished_at`, and appends one run-level `canceled` event transactionally. Runs already in `canceled` status are successful no-ops. Other statuses are rejected until a later runner slice defines live stop behavior.
 

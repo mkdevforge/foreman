@@ -93,6 +93,7 @@ describe("Phase 6a automated acceptance hardening", () => {
       "workspace",
       "changed"
     ]);
+    expectJsonCommand(repo, homeDir, ["dispatch", "prompt", claimedDispatchRun.dispatch_run.id], ["dispatch_prompt"]);
 
     seedAcceptanceSessions(homeDir, repo);
     seedAcceptanceDispatchRuns(homeDir);

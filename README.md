@@ -127,6 +127,7 @@ foreman dispatch create FOREMAN-1/parser --stage review
 foreman dispatch claim <run-id-or-prefix> --tool codex
 foreman dispatch claim <run-id-or-prefix> --tool claude-code
 foreman dispatch prepare <run-id-or-prefix>
+foreman dispatch prompt <run-id-or-prefix>
 foreman dispatch cancel <run-id-or-prefix>
 foreman dispatch list
 foreman dispatch list --task FOREMAN-1 --chunk parser --status queued
@@ -134,11 +135,13 @@ foreman dispatch show <run-id-or-prefix>
 foreman dispatch show <run-id-or-prefix> --json
 ```
 
-`foreman dispatch create --json` returns `dispatch_run` and `readiness`. Requested dispatch stages are `plan`, `implement`, or `review`; `discovery` remains a pre-dispatch stage. `foreman dispatch prepare --json` returns the updated `dispatch_run`, `workspace`, and `changed`. `foreman dispatch cancel --json` returns the updated `dispatch_run` and `changed`. Only queued runs can be canceled; already canceled runs are successful no-ops. `foreman dispatch list --json` returns `dispatch_runs`. `foreman dispatch show --json` returns `dispatch_run`. Each run includes run fields, attempts, events, and any attempt-linked session overview.
+`foreman dispatch create --json` returns `dispatch_run` and `readiness`. Requested dispatch stages are `plan`, `implement`, or `review`; `discovery` remains a pre-dispatch stage. `foreman dispatch prepare --json` returns the updated `dispatch_run`, `workspace`, and `changed`. `foreman dispatch prompt --json` returns `dispatch_prompt`. `foreman dispatch cancel --json` returns the updated `dispatch_run` and `changed`. Only queued runs can be canceled; already canceled runs are successful no-ops. `foreman dispatch list --json` returns `dispatch_runs`. `foreman dispatch show --json` returns `dispatch_run`. Each run includes run fields, attempts, events, and any attempt-linked session overview.
 
 `foreman dispatch claim` moves a queued run to `claimed` for a selected local tool and records that choice as a run-level event. It does not create attempts, create worktrees, or launch an agent yet.
 
 `foreman dispatch prepare` moves a claimed run to `running`, creates or reuses one sibling worktree for the parent task, and records the first `preparing_workspace` attempt. The default workspace is `../foreman-worktrees/<repo-name>/<task-id>` from the control repo root, on branch `foreman/<task-id>`. It still does not launch Claude/Codex or attach sessions.
+
+`foreman dispatch prompt` builds the deterministic launch prompt for a prepared run. Text output is the prompt body; JSON output includes prompt metadata plus the prompt text. It is read-only and does not launch agents, mutate SQLite, or mutate task YAML.
 
 ## Active Work Context
 

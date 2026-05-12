@@ -3,9 +3,9 @@ id: FOREMAN-9
 title: Dispatch workspace preparation
 source_ref: null
 description: Prepare claimed dispatch runs into recorded task-level sibling worktrees before launching agents.
-status: doing
+status: done
 created_at: 2026-05-11T22:50:35.073Z
-updated_at: 2026-05-12T00:50:37.285Z
+updated_at: 2026-05-12T01:03:18.432Z
 chunks:
   - id: dispatch-prepare-worktree
     title: Dispatch prepare worktree

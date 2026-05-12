@@ -14,6 +14,7 @@ import {
 } from "../dispatch/claim";
 import { createQueuedDispatchRun } from "../dispatch/create";
 import { prepareClaimedDispatchRun, type PrepareDispatchRunResult } from "../dispatch/prepare";
+import { buildDispatchPrompt, type BuildDispatchPromptResult, type DispatchPrompt } from "../dispatch/prompt";
 import {
   getDispatchRunDetailById,
   listDispatchRunDetails,
@@ -622,7 +623,7 @@ function createCatalogCommand(json: boolean, io: CliIo): Command {
 
 function createDispatchCommand(json: boolean, io: CliIo): Command {
   const dispatch = configureCommand(new Command("dispatch"), io)
-    .description("Create, claim, prepare, cancel, and query persisted dispatch runs.")
+    .description("Create, claim, prepare, prompt, cancel, and query persisted dispatch runs.")
     .action(() => {
       throw new CliError(2, "missing_command", "missing dispatch command");
     });
@@ -743,6 +744,44 @@ function createDispatchCommand(json: boolean, io: CliIo): Command {
       });
     });
 
+  configureCommand(dispatch.command("prompt"), io)
+    .description("Build a deterministic prompt preview for a prepared dispatch attempt.")
+    .argument("<run-id-or-prefix>")
+    .action((prefix: string) => {
+      const controlRepoRoot = findRepoRoot();
+      const repoRemote = getRequiredGitOriginRemote(controlRepoRoot);
+      const repoName = repoNameFromGitRemote(repoRemote);
+      const detail = withForemanDatabase((db) => getDispatchRunDetailById(db, resolveDispatchRunIdOrThrow(db, prefix)));
+
+      if (detail === null) {
+        throw new CliError(1, "dispatch_run_not_found", `dispatch run '${prefix}' was not found`);
+      }
+
+      const task = readTask(controlRepoRoot, detail.run.task_id);
+      const chunk = findChunkForDispatchRunOrThrow(task, detail);
+      const result = buildDispatchPrompt(detail, task, chunk, { repoName });
+
+      if (result.kind === "repo_mismatch") {
+        throw new CliError(
+          2,
+          "dispatch_repo_mismatch",
+          `dispatch run '${detail.run.id}' belongs to repo '${result.expectedRepoName}', not '${result.actualRepoName ?? "null"}'`,
+          { dispatch_run: toJsonDispatchRunDetail(detail), repo_name: result.actualRepoName }
+        );
+      }
+
+      if (result.kind === "not_promptable") {
+        throw new CliError(
+          2,
+          "dispatch_prompt_unavailable",
+          `dispatch run '${detail.run.id}' cannot produce a prompt: ${result.reason}`,
+          { dispatch_run: toJsonDispatchRunDetail(detail), reason: result.reason }
+        );
+      }
+
+      writeData(json, io, renderDispatchPrompt(result), { dispatch_prompt: toJsonDispatchPrompt(result.dispatchPrompt) });
+    });
+
   configureCommand(dispatch.command("cancel"), io)
     .description("Cancel a queued dispatch run.")
     .argument("<run-id-or-prefix>")
@@ -813,6 +852,16 @@ function resolveDispatchRunIdOrThrow(db: Database, prefix: string): string {
   }
 
   return resolved.id;
+}
+
+function findChunkForDispatchRunOrThrow(task: ForemanTask, detail: DispatchRunDetail): ForemanChunk {
+  const chunk = task.chunks.find((candidate) => candidate.id === detail.run.chunk_id);
+
+  if (chunk === undefined) {
+    throw new CliError(2, "chunk_not_found", `chunk '${detail.run.task_id}/${detail.run.chunk_id}' was not found`);
+  }
+
+  return chunk;
 }
 
 function parseDispatchTool(value: string): DispatchTool {
@@ -1707,6 +1756,25 @@ function toJsonDispatchRun(run: DispatchRunRecord) {
   };
 }
 
+function toJsonDispatchPrompt(prompt: DispatchPrompt) {
+  return {
+    run_id: prompt.run_id,
+    attempt_id: prompt.attempt_id,
+    repo_name: prompt.repo_name,
+    task_id: prompt.task_id,
+    task_title: prompt.task_title,
+    chunk_id: prompt.chunk_id,
+    chunk_title: prompt.chunk_title,
+    requested_stage: prompt.requested_stage,
+    chunk_stage: prompt.chunk_stage,
+    chunk_status: prompt.chunk_status,
+    tool: prompt.tool,
+    workspace_path: prompt.workspace_path,
+    worktree_branch: prompt.worktree_branch,
+    prompt: prompt.prompt
+  };
+}
+
 function toJsonDispatchAttempt(attempt: DispatchAttemptDetail) {
   return {
     id: attempt.id,
@@ -2175,6 +2243,10 @@ function renderDispatchPrepare(
     `Workspace created: ${result.workspace.created ? "yes" : "no"}`,
     ""
   ].join("\n");
+}
+
+function renderDispatchPrompt(result: Exclude<BuildDispatchPromptResult, { kind: "repo_mismatch" | "not_promptable" }>): string {
+  return result.dispatchPrompt.prompt;
 }
 
 function renderDispatchRunShow(detail: DispatchRunDetail): string {
