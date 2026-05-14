@@ -1,0 +1,44 @@
+schema_version: 1
+id: FOREMAN-17
+title: Dispatch workspace inspection
+source_ref: null
+description: Add read-only dispatch workspace and diff inspection commands for human and UI review
+  before cleanup or merge.
+status: done
+created_at: 2026-05-14T21:30:31.348Z
+updated_at: 2026-05-14T21:38:49.212Z
+chunks:
+  - id: dispatch-workspace-inspection
+    title: Dispatch workspace inspection
+    spec: |
+      Add read-only inspection commands for prepared/launched dispatch workspaces.
+
+      Scope:
+      - Add `foreman dispatch workspace <run-id-or-prefix>` with text and JSON output.
+      - Add `foreman dispatch diff <run-id-or-prefix> [--stat] [--name-only]` with text
+        and JSON output.
+      - Resolve dispatch run prefixes with the existing dispatch prefix behavior.
+      - Inspect exactly one recorded attempt for the run; report unsupported state clearly
+        when no attempt, multiple attempts, or no workspace path exists.
+      - Verify the workspace path exists, is a Git root, and is on the recorded
+        worktree branch.
+      - Report dirty state, porcelain file statuses, untracked files, upstream name,
+        ahead/behind counts when available, and recent commits.
+      - Keep the commands read-only; do not mutate dispatch rows, chunk YAML, branches,
+        worktrees, or repository state.
+
+      Expected outcome:
+      - A human or future UI can see what a dispatch run changed before cleanup, merge, or
+        retry behavior exists.
+      - Diff output follows Git semantics and does not hide command failures behind
+        partial results.
+    status: done
+    stage: implement
+    created_at: 2026-05-14T21:30:34.004Z
+    updated_at: 2026-05-14T21:38:49.212Z
+    notes:
+      - ts: 2026-05-14T21:38:13.079Z
+        body: Implemented read-only dispatch workspace and diff inspection. Added structured Git workspace
+          inspection, tracked diff modes, JSON/text CLI output, docs, JSON acceptance coverage,
+          focused tests for dirty worktrees and unsupported states, and dogfooded against a real
+          completed Codex dispatch workspace.

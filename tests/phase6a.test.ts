@@ -128,6 +128,15 @@ describe("Phase 6a automated acceptance hardening", () => {
       launchedDispatchRun.dispatch_launch.attempt_id,
       "018f6000-0000-7000-8000-000000000001"
     );
+    expectJsonCommand(repo, homeDir, ["dispatch", "workspace", claimedDispatchRun.dispatch_run.id], [
+      "dispatch_run",
+      "workspace"
+    ]);
+    expectJsonCommand(repo, homeDir, ["dispatch", "diff", claimedDispatchRun.dispatch_run.id, "--name-only"], [
+      "dispatch_run",
+      "workspace",
+      "diff"
+    ]);
     expectJsonCommand(repo, homeDir, ["dispatch", "finish", claimedDispatchRun.dispatch_run.id, "--status", "succeeded"], [
       "dispatch_run",
       "changed"

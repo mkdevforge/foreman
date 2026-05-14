@@ -23,6 +23,17 @@ import { launchPreparedDispatchRun, type DispatchLaunch, type LaunchDispatchRunR
 import { prepareClaimedDispatchRun, type DispatchWorkspace, type PrepareDispatchRunResult } from "../dispatch/prepare";
 import { buildDispatchPrompt, type BuildDispatchPromptResult, type DispatchPrompt } from "../dispatch/prompt";
 import {
+  buildDispatchWorkspaceDiff,
+  inspectDispatchWorkspace,
+  type DispatchDiffMode,
+  type DispatchWorkspaceDiff,
+  type DispatchWorkspaceDiffResult,
+  type DispatchWorkspaceCommit,
+  type DispatchWorkspaceInspection,
+  type DispatchWorkspaceStatusFile,
+  type InspectDispatchWorkspaceResult
+} from "../dispatch/workspace";
+import {
   getDispatchRunDetailById,
   listDispatchRunDetails,
   resolveDispatchRunPrefix,
@@ -644,7 +655,7 @@ function createCatalogCommand(json: boolean, io: CliIo): Command {
 
 function createDispatchCommand(json: boolean, io: CliIo): Command {
   const dispatch = configureCommand(new Command("dispatch"), io)
-    .description("Start, create, claim, prepare, prompt, launch, finish, cancel, and query persisted dispatch runs.")
+    .description("Start, create, claim, prepare, prompt, launch, inspect, finish, cancel, and query persisted dispatch runs.")
     .action(() => {
       throw new CliError(2, "missing_command", "missing dispatch command");
     });
@@ -1029,6 +1040,40 @@ function createDispatchCommand(json: boolean, io: CliIo): Command {
       });
     });
 
+  configureCommand(dispatch.command("workspace"), io)
+    .description("Inspect a dispatch run workspace without mutating it.")
+    .argument("<run-id-or-prefix>")
+    .action((prefix: string) => {
+      const result = withForemanDatabase((db) =>
+        inspectDispatchWorkspace(db, resolveDispatchRunIdOrThrow(db, prefix))
+      );
+      const inspected = dispatchWorkspaceOrThrow(prefix, result);
+
+      writeData(json, io, renderDispatchWorkspaceInspection(inspected), {
+        dispatch_run: toJsonDispatchRunDetail(inspected.detail),
+        workspace: toJsonDispatchWorkspaceInspection(inspected.workspace)
+      });
+    });
+
+  configureCommand(dispatch.command("diff"), io)
+    .description("Print the tracked Git diff for a dispatch run workspace without mutating it.")
+    .argument("<run-id-or-prefix>")
+    .option("--stat", "print diffstat instead of the full diff")
+    .option("--name-only", "print changed tracked paths instead of the full diff")
+    .action((prefix: string, options: { stat?: boolean; nameOnly?: boolean }) => {
+      const mode = parseDispatchDiffMode(options);
+      const result = withForemanDatabase((db) =>
+        buildDispatchWorkspaceDiff(db, resolveDispatchRunIdOrThrow(db, prefix), mode)
+      );
+      const diff = dispatchWorkspaceDiffOrThrow(prefix, result);
+
+      writeData(json, io, renderDispatchWorkspaceDiff(diff), {
+        dispatch_run: toJsonDispatchRunDetail(diff.detail),
+        workspace: toJsonDispatchWorkspaceInspection(diff.workspace),
+        diff: toJsonDispatchWorkspaceDiff(diff.diff)
+      });
+    });
+
   configureCommand(dispatch.command("finish"), io)
     .description("Finish a running dispatch run after launch completion is known.")
     .argument("<run-id-or-prefix>")
@@ -1144,6 +1189,44 @@ function resolveDispatchRunIdOrThrow(db: Database, prefix: string): string {
   return resolved.id;
 }
 
+type InspectedDispatchWorkspace = Extract<InspectDispatchWorkspaceResult, { kind: "inspected" }>;
+type DispatchWorkspaceDiffSuccess = Extract<DispatchWorkspaceDiffResult, { kind: "diff" }>;
+
+function dispatchWorkspaceOrThrow(prefix: string, result: InspectDispatchWorkspaceResult): InspectedDispatchWorkspace {
+  if (result.kind === "missing") {
+    throw new CliError(1, "dispatch_run_not_found", `dispatch run '${prefix}' was not found`);
+  }
+
+  if (result.kind === "not_inspectable") {
+    throw new CliError(
+      2,
+      "dispatch_workspace_uninspectable",
+      `dispatch run '${result.detail.run.id}' workspace cannot be inspected: ${result.reason}`,
+      {
+        dispatch_run: toJsonDispatchRunDetail(result.detail),
+        attempt_id: result.attempt?.id ?? null,
+        reason: result.reason,
+        message: result.message,
+        workspace_path: result.workspace_path,
+        expected_branch: result.expected_branch,
+        actual_branch: result.actual_branch ?? null,
+        git_root: result.git_root ?? null
+      }
+    );
+  }
+
+  return result;
+}
+
+function dispatchWorkspaceDiffOrThrow(prefix: string, result: DispatchWorkspaceDiffResult): DispatchWorkspaceDiffSuccess {
+  if (result.kind === "diff") {
+    return result;
+  }
+
+  dispatchWorkspaceOrThrow(prefix, result);
+  throw new CliError(1, "internal_error", "unexpected dispatch workspace diff state");
+}
+
 function findChunkForDispatchRunOrThrow(task: ForemanTask, detail: DispatchRunDetail): ForemanChunk {
   const chunk = task.chunks.find((candidate) => candidate.id === detail.run.chunk_id);
 
@@ -1198,6 +1281,22 @@ function parseDispatchFinishStatus(value: string): DispatchFinishStatus {
   }
 
   return value as DispatchFinishStatus;
+}
+
+function parseDispatchDiffMode(options: { stat?: boolean; nameOnly?: boolean }): DispatchDiffMode {
+  if (options.stat === true && options.nameOnly === true) {
+    throw new CliError(2, "invalid_dispatch_diff_options", "use only one of --stat or --name-only");
+  }
+
+  if (options.stat === true) {
+    return "stat";
+  }
+
+  if (options.nameOnly === true) {
+    return "name_only";
+  }
+
+  return "full";
 }
 
 function createSessionCommand(json: boolean, io: CliIo): Command {
@@ -2118,6 +2217,42 @@ function toJsonDispatchLaunch(launch: DispatchLaunch) {
   };
 }
 
+function toJsonDispatchWorkspaceInspection(workspace: DispatchWorkspaceInspection) {
+  return {
+    run_id: workspace.run_id,
+    attempt_id: workspace.attempt_id,
+    attempt_number: workspace.attempt_number,
+    workspace_path: workspace.workspace_path,
+    expected_branch: workspace.expected_branch,
+    git_root: workspace.git_root,
+    branch: workspace.branch,
+    branch_matches: workspace.branch_matches,
+    dirty: workspace.dirty,
+    changed_files: workspace.changed_files.map(toJsonDispatchWorkspaceStatusFile),
+    untracked_files: workspace.untracked_files,
+    upstream: workspace.upstream,
+    ahead: workspace.ahead,
+    behind: workspace.behind,
+    recent_commits: workspace.recent_commits
+  };
+}
+
+function toJsonDispatchWorkspaceStatusFile(file: DispatchWorkspaceStatusFile) {
+  return {
+    path: file.path,
+    index_status: file.index_status,
+    worktree_status: file.worktree_status,
+    original_path: file.original_path
+  };
+}
+
+function toJsonDispatchWorkspaceDiff(diff: DispatchWorkspaceDiff) {
+  return {
+    mode: diff.mode,
+    text: diff.text
+  };
+}
+
 function toJsonDispatchAttempt(attempt: DispatchAttemptDetail) {
   return {
     id: attempt.id,
@@ -2615,6 +2750,34 @@ function renderDispatchStart(result: DispatchStartResult): string {
   ].join("\n");
 }
 
+function renderDispatchWorkspaceInspection(result: InspectedDispatchWorkspace): string {
+  const workspace = result.workspace;
+  const lines = [
+    `Dispatch workspace ${workspace.run_id}`,
+    `Task: ${result.detail.run.task_id}/${result.detail.run.chunk_id}`,
+    `Run status: ${result.detail.run.status}`,
+    `Attempt: ${workspace.attempt_id} #${workspace.attempt_number}`,
+    `Workspace: ${workspace.workspace_path}`,
+    `Git root: ${workspace.git_root}`,
+    `Branch: ${workspace.branch ?? "detached"}`,
+    `Expected branch: ${workspace.expected_branch}`,
+    `Branch matches: ${workspace.branch_matches ? "yes" : "no"}`,
+    `Dirty: ${workspace.dirty ? "yes" : "no"}`,
+    `Upstream: ${workspace.upstream ?? "null"}`,
+    `Ahead/behind: ${workspace.ahead ?? "null"}/${workspace.behind ?? "null"}`,
+    "Changed files:",
+    ...renderDispatchWorkspaceChangedFiles(workspace.changed_files),
+    "Recent commits:",
+    ...renderDispatchWorkspaceCommits(workspace.recent_commits)
+  ];
+
+  return `${lines.join("\n")}\n`;
+}
+
+function renderDispatchWorkspaceDiff(result: DispatchWorkspaceDiffSuccess): string {
+  return result.diff.text;
+}
+
 function renderDispatchFinish(
   result: Exclude<FinishDispatchRunResult, { kind: "missing" | "not_finishable" }>
 ): string {
@@ -2787,6 +2950,29 @@ function renderDispatchEvents(events: DispatchEventRecord[]): string[] {
       event.message
     ].join("")
   );
+}
+
+function renderDispatchWorkspaceChangedFiles(files: DispatchWorkspaceStatusFile[]): string[] {
+  if (files.length === 0) {
+    return ["  none"];
+  }
+
+  return files.map((file) => {
+    const original = file.original_path === null ? "" : ` from ${file.original_path}`;
+    return `  ${formatGitStatus(file.index_status)}${formatGitStatus(file.worktree_status)}  ${file.path}${original}`;
+  });
+}
+
+function renderDispatchWorkspaceCommits(commits: DispatchWorkspaceCommit[]): string[] {
+  if (commits.length === 0) {
+    return ["  none"];
+  }
+
+  return commits.map((commit) => `  ${commit.short_hash}  ${commit.subject}`);
+}
+
+function formatGitStatus(status: string): string {
+  return status === " " ? "." : status;
 }
 
 function formatSessionUsage(usage: SessionUsage | null): string {

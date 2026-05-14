@@ -121,6 +121,8 @@ The current user-facing dispatch surface reaches the first process-launch slice 
 - `foreman dispatch prepare <run-id-or-prefix>`
 - `foreman dispatch prompt <run-id-or-prefix>`
 - `foreman dispatch launch <run-id-or-prefix>`
+- `foreman dispatch workspace <run-id-or-prefix>`
+- `foreman dispatch diff <run-id-or-prefix> [--stat] [--name-only]`
 - `foreman dispatch cancel <run-id-or-prefix>`
 - `foreman dispatch list [--task <id>] [--chunk <id>] [--status <status>]`
 - `foreman dispatch show <run-id-or-prefix>`
@@ -138,6 +140,10 @@ The current user-facing dispatch surface reaches the first process-launch slice 
 `foreman dispatch launch` resolves exact IDs or unique prefixes, verifies the run belongs to the current control repo, loads the same task/chunk prompt context, requires exactly one `preparing_workspace` attempt, and starts the selected local tool from the attempt workspace. Codex launches as `codex --ask-for-approval never exec --sandbox workspace-write --color never -`; Claude Code launches as `claude --print --input-format text --output-format stream-json --verbose --permission-mode acceptEdits`. The prompt is passed on stdin. The command records `prompt_built` and `agent_launched` events, moves the attempt through `building_prompt` to `launching_agent`, stores `process_id`, passes dispatch IDs through the child environment, and returns immediately. Event JSON stores command metadata plus prompt size/hash, not the full prompt.
 
 When a launched child later triggers a Foreman Stop hook, the hook captures the base session first, then attaches the captured `session_id` to the matching `launching_agent` attempt and appends one `session_attached` event. Missing or malformed dispatch env, missing rows, status mismatches, and conflicting existing links are logged as degraded hook failures; they do not undo session capture or active chunk linkage. This attachment does not infer success, update run completion, retry, cancel live processes, mutate task YAML, or clean up worktrees.
+
+`foreman dispatch workspace` resolves exact IDs or unique prefixes and inspects the recorded attempt worktree without mutating SQLite, YAML, branches, or files. It requires exactly one attempt with a workspace path and recorded worktree branch, verifies the workspace exists, is the Git root, and is on the recorded branch, then reports dirty state, porcelain file statuses, untracked files, upstream/ahead/behind counts when available, and recent commits. Unsupported states such as no attempt, multiple attempts, missing workspace path, missing workspace, or branch mismatch fail as command errors with structured JSON details.
+
+`foreman dispatch diff` performs the same workspace validation and then prints `git diff HEAD --` for tracked changes. `--stat` maps to `git diff --stat HEAD --`; `--name-only` maps to `git diff --name-only HEAD --`. The command intentionally follows Git diff semantics, so untracked files are visible through `dispatch workspace` but are not included in tracked diff output.
 
 `foreman dispatch finish` resolves exact IDs or unique prefixes and requires a `running` run with exactly one `launching_agent` attempt. `--status succeeded` always requires a captured `session_id`. `--status failed` requires a captured `session_id` by default, but `--allow-missing-session` permits closing a launched attempt that exited before Stop-hook capture; this no-session failure path requires `--message`. The command sets terminal timestamps and appends one attempt-level terminal event, including whether the attempt was finished without a session. Repeating the same terminal status is a successful no-op without a duplicate event. This command is explicit human or runner input; Foreman does not infer completion from hook capture alone.
 
