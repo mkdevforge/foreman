@@ -20,7 +20,7 @@ import {
   type FinishDispatchRunResult
 } from "../dispatch/finish";
 import { launchPreparedDispatchRun, type DispatchLaunch, type LaunchDispatchRunResult } from "../dispatch/launch";
-import { prepareClaimedDispatchRun, type PrepareDispatchRunResult } from "../dispatch/prepare";
+import { prepareClaimedDispatchRun, type DispatchWorkspace, type PrepareDispatchRunResult } from "../dispatch/prepare";
 import { buildDispatchPrompt, type BuildDispatchPromptResult, type DispatchPrompt } from "../dispatch/prompt";
 import {
   getDispatchRunDetailById,
@@ -167,6 +167,20 @@ interface CatalogOneShotResult {
   stage: string | null;
   linkedBy: "catalog" | null;
   changed: boolean;
+}
+
+interface DispatchStartStep {
+  name: "created" | "claimed" | "prepared" | "prompt_built" | "launched";
+  run_id: string;
+  detail?: Record<string, unknown>;
+}
+
+interface DispatchStartResult {
+  detail: DispatchRunDetail;
+  readiness: ChunkReadinessReport;
+  workspace: DispatchWorkspace;
+  launch: DispatchLaunch;
+  steps: DispatchStartStep[];
 }
 
 type CostGroupBy = "project" | "task" | "chunk" | "model" | "source" | "day";
@@ -630,7 +644,7 @@ function createCatalogCommand(json: boolean, io: CliIo): Command {
 
 function createDispatchCommand(json: boolean, io: CliIo): Command {
   const dispatch = configureCommand(new Command("dispatch"), io)
-    .description("Create, claim, prepare, prompt, launch, finish, cancel, and query persisted dispatch runs.")
+    .description("Start, create, claim, prepare, prompt, launch, finish, cancel, and query persisted dispatch runs.")
     .action(() => {
       throw new CliError(2, "missing_command", "missing dispatch command");
     });
@@ -644,15 +658,7 @@ function createDispatchCommand(json: boolean, io: CliIo): Command {
       const repoRemote = getRequiredGitOriginRemote(controlRepoRoot);
       const repoName = repoNameFromGitRemote(repoRemote);
       const chunkRef = parseChunkRef(ref);
-      let requestedStageOverride: ChunkStage | undefined;
-
-      if (options.stage !== undefined) {
-        assertValidChunkStage(options.stage);
-        if (options.stage === "discovery") {
-          throw new CliError(2, "invalid_dispatch_stage", "dispatch requested stage must be plan, implement, or review");
-        }
-        requestedStageOverride = options.stage;
-      }
+      const requestedStageOverride = parseDispatchRequestedStage(options.stage);
 
       const readiness = evaluateChunkReadiness(controlRepoRoot, chunkRef);
       if (!readiness.ready) {
@@ -675,6 +681,173 @@ function createDispatchCommand(json: boolean, io: CliIo): Command {
       writeData(json, io, renderDispatchCreate(run), {
         dispatch_run: toJsonDispatchRunDetail(run),
         readiness: toJsonChunkReadiness(readiness)
+      });
+    });
+
+  configureCommand(dispatch.command("start"), io)
+    .description("Create, claim, prepare, and launch a ready chunk in one command.")
+    .argument("<task>/<chunk>")
+    .requiredOption("--tool <tool>", "claude-code or codex")
+    .option("--stage <stage>", "requested dispatch stage: plan, implement, or review")
+    .action((ref: string, options: { tool: string; stage?: string }) => {
+      const controlRepoRoot = findRepoRoot();
+      const repoRemote = getRequiredGitOriginRemote(controlRepoRoot);
+      const repoName = repoNameFromGitRemote(repoRemote);
+      const chunkRef = parseChunkRef(ref);
+      const tool = parseDispatchTool(options.tool);
+      const requestedStageOverride = parseDispatchRequestedStage(options.stage);
+      const readiness = evaluateChunkReadiness(controlRepoRoot, chunkRef);
+
+      if (!readiness.ready) {
+        throw new CliError(
+          2,
+          "dispatch_not_ready",
+          `chunk '${ref}' is not ready for dispatch; blockers: ${readiness.blockers.map((blocker) => blocker.code).join(", ")}`,
+          { readiness: toJsonChunkReadiness(readiness) }
+        );
+      }
+
+      const steps: DispatchStartStep[] = [];
+      const created = withForemanDatabase((db) =>
+        createQueuedDispatchRun(db, chunkRef, {
+          requestedStage: requestedStageOverride ?? readiness.chunk.stage,
+          repoName,
+          source: "cli"
+        })
+      );
+      steps.push({ name: "created", run_id: created.run.id });
+
+      const claimed = withForemanDatabase((db) => claimQueuedDispatchRun(db, created.run.id, { tool }));
+      if (claimed.kind === "missing") {
+        throw new CliError(1, "dispatch_run_not_found", `dispatch run '${created.run.id}' was not found`);
+      }
+
+      if (claimed.kind === "not_claimable") {
+        throw new CliError(
+          2,
+          "dispatch_run_not_claimable",
+          `dispatch run '${claimed.detail.run.id}' has status '${claimed.detail.run.status}' and cannot be claimed; expected queued`,
+          { dispatch_run: toJsonDispatchRunDetail(claimed.detail), steps }
+        );
+      }
+      steps.push({ name: "claimed", run_id: claimed.detail.run.id, detail: { tool } });
+
+      const prepared = withDispatchStartErrorContext(claimed.detail.run.id, steps, () =>
+        withForemanDatabase((db) =>
+          prepareClaimedDispatchRun(db, claimed.detail.run.id, {
+            controlRepoRoot,
+            repoRemote,
+            repoName
+          })
+        )
+      );
+      if (prepared.kind === "missing") {
+        throw new CliError(1, "dispatch_run_not_found", `dispatch run '${created.run.id}' was not found`, { steps });
+      }
+
+      if (prepared.kind === "repo_mismatch") {
+        throw new CliError(
+          2,
+          "dispatch_repo_mismatch",
+          `dispatch run '${prepared.detail.run.id}' belongs to repo '${prepared.expectedRepoName}', not '${prepared.actualRepoName ?? "null"}'`,
+          { dispatch_run: toJsonDispatchRunDetail(prepared.detail), repo_name: prepared.actualRepoName, steps }
+        );
+      }
+
+      if (prepared.kind === "not_preparable") {
+        throw new CliError(
+          2,
+          "dispatch_run_not_preparable",
+          `dispatch run '${prepared.detail.run.id}' cannot be prepared: ${prepared.reason}`,
+          { dispatch_run: toJsonDispatchRunDetail(prepared.detail), reason: prepared.reason, steps }
+        );
+      }
+      steps.push({
+        name: "prepared",
+        run_id: prepared.detail.run.id,
+        detail: {
+          workspace_path: prepared.workspace.workspace_path,
+          worktree_branch: prepared.workspace.worktree_branch,
+          workspace_created: prepared.workspace.created
+        }
+      });
+
+      const task = readTask(controlRepoRoot, prepared.detail.run.task_id);
+      const chunk = findChunkForDispatchRunOrThrow(task, prepared.detail);
+      const promptResult = buildDispatchPrompt(prepared.detail, task, chunk, { repoName });
+
+      if (promptResult.kind === "repo_mismatch") {
+        throw new CliError(
+          2,
+          "dispatch_repo_mismatch",
+          `dispatch run '${prepared.detail.run.id}' belongs to repo '${promptResult.expectedRepoName}', not '${promptResult.actualRepoName ?? "null"}'`,
+          { dispatch_run: toJsonDispatchRunDetail(prepared.detail), repo_name: promptResult.actualRepoName, steps }
+        );
+      }
+
+      if (promptResult.kind === "not_promptable") {
+        throw new CliError(
+          2,
+          "dispatch_run_not_launchable",
+          `dispatch run '${prepared.detail.run.id}' cannot be launched: ${promptResult.reason}`,
+          { dispatch_run: toJsonDispatchRunDetail(prepared.detail), reason: promptResult.reason, steps }
+        );
+      }
+      const launched = withForemanDatabase((db) =>
+        launchPreparedDispatchRun(db, prepared.detail.run.id, promptResult.dispatchPrompt, { env: process.env })
+      );
+      if (launched.kind === "missing") {
+        throw new CliError(1, "dispatch_run_not_found", `dispatch run '${created.run.id}' was not found`, { steps });
+      }
+
+      if (launched.kind === "not_launchable") {
+        throw new CliError(
+          2,
+          "dispatch_run_not_launchable",
+          `dispatch run '${launched.detail.run.id}' cannot be launched: ${launched.reason}`,
+          { dispatch_run: toJsonDispatchRunDetail(launched.detail), reason: launched.reason, steps }
+        );
+      }
+
+      if (launched.kind === "launch_failed") {
+        throw new CliError(
+          1,
+          "dispatch_launch_failed",
+          `dispatch run '${launched.detail.run.id}' launch failed: ${launched.errorMessage}`,
+          { dispatch_run: toJsonDispatchRunDetail(launched.detail), error: launched.errorMessage, steps }
+        );
+      }
+      steps.push({
+        name: "prompt_built",
+        run_id: launched.detail.run.id,
+        detail: {
+          prompt_chars: launched.launch.prompt_chars,
+          prompt_sha256: launched.launch.prompt_sha256
+        }
+      });
+      steps.push({
+        name: "launched",
+        run_id: launched.detail.run.id,
+        detail: {
+          process_id: launched.launch.process_id,
+          tool: launched.launch.tool
+        }
+      });
+
+      const result: DispatchStartResult = {
+        detail: launched.detail,
+        readiness,
+        workspace: prepared.workspace,
+        launch: launched.launch,
+        steps
+      };
+
+      writeData(json, io, renderDispatchStart(result), {
+        dispatch_run: toJsonDispatchRunDetail(result.detail),
+        readiness: toJsonChunkReadiness(result.readiness),
+        workspace: result.workspace,
+        dispatch_launch: toJsonDispatchLaunch(result.launch),
+        steps: result.steps
       });
     });
 
@@ -987,6 +1160,36 @@ function parseDispatchTool(value: string): DispatchTool {
   }
 
   return value as DispatchTool;
+}
+
+function parseDispatchRequestedStage(value: string | undefined): ChunkStage | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  assertValidChunkStage(value);
+  if (value === "discovery") {
+    throw new CliError(2, "invalid_dispatch_stage", "dispatch requested stage must be plan, implement, or review");
+  }
+
+  return value;
+}
+
+function withDispatchStartErrorContext<T>(runId: string, steps: DispatchStartStep[], action: () => T): T {
+  try {
+    return action();
+  } catch (error) {
+    if (!(error instanceof CliError)) {
+      throw error;
+    }
+
+    const detail = withForemanDatabase((db) => getDispatchRunDetailById(db, runId));
+    throw new CliError(error.exitCode, error.code, error.message, {
+      ...(error.details ?? {}),
+      ...(detail === null ? {} : { dispatch_run: toJsonDispatchRunDetail(detail) }),
+      steps
+    });
+  }
 }
 
 function parseDispatchFinishStatus(value: string): DispatchFinishStatus {
@@ -2397,6 +2600,17 @@ function renderDispatchLaunch(
     `Tool: ${result.launch.tool}`,
     `Process: ${result.launch.process_id}`,
     `Workspace: ${result.launch.cwd}`,
+    ""
+  ].join("\n");
+}
+
+function renderDispatchStart(result: DispatchStartResult): string {
+  return [
+    `Started dispatch run ${result.detail.run.id}.`,
+    `Tool: ${result.launch.tool}`,
+    `Process: ${result.launch.process_id}`,
+    `Workspace: ${result.launch.cwd}`,
+    `Steps: ${result.steps.map((step) => step.name).join(", ")}`,
     ""
   ].join("\n");
 }

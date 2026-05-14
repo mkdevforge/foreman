@@ -116,6 +116,7 @@ Readiness evaluation should run against the control repo's YAML before a dispatc
 The current user-facing dispatch surface reaches the first process-launch slice but still keeps completion and reconciliation separate:
 
 - `foreman dispatch create <task>/<chunk> [--stage <stage>]`
+- `foreman dispatch start <task>/<chunk> --tool <claude-code|codex> [--stage <stage>]`
 - `foreman dispatch claim <run-id-or-prefix> --tool <claude-code|codex>`
 - `foreman dispatch prepare <run-id-or-prefix>`
 - `foreman dispatch prompt <run-id-or-prefix>`
@@ -125,6 +126,8 @@ The current user-facing dispatch surface reaches the first process-launch slice 
 - `foreman dispatch show <run-id-or-prefix>`
 
 `foreman dispatch create` requires an origin remote, validates readiness from control-repo YAML first, then atomically inserts one `queued` `dispatch_runs` row and one run-level `queued` event. Requested dispatch stages are `plan`, `implement`, or `review`; `discovery` remains a pre-dispatch stage. The command does not launch agents, create worktrees, create attempts, mutate chunk status, or write run state to YAML.
+
+`foreman dispatch start` is the composed normal path for a ready chunk. It requires an origin remote, validates readiness, creates a queued run, claims it for the selected tool, prepares the task-level sibling worktree, builds the deterministic prompt, launches the local agent, and returns immediately. It persists the same event sequence as the lower-level commands: `queued`, `claimed`, `attempt_prepared`, `prompt_built`, and `agent_launched`. If a later step fails, already-completed state remains in SQLite for inspection and recovery; not-ready chunks fail before any dispatch rows are inserted. The command does not wait for completion, attach sessions, infer success, retry, merge, mutate task YAML, or clean up worktrees.
 
 `foreman dispatch claim` resolves exact IDs or unique prefixes, changes queued runs to `claimed`, and appends one run-level `claimed` event with the selected tool. This is only a local queue ownership step; it does not create attempts, create worktrees, launch agents, mutate task YAML, or attach sessions.
 

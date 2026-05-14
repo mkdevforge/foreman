@@ -109,6 +109,18 @@ describe("Phase 6a automated acceptance hardening", () => {
       }
     );
     await waitForFile(join(launchCapture, "stdin"));
+    const startCapture = createTempDir();
+    expectJsonCommand(
+      repo,
+      homeDir,
+      ["dispatch", "start", "FOREMAN-1/api", "--tool", "codex"],
+      ["dispatch_run", "readiness", "workspace", "dispatch_launch", "steps"],
+      {
+        PATH: `${fakeBin}:${systemPath}`,
+        FOREMAN_FAKE_LAUNCH_CAPTURE: startCapture
+      }
+    );
+    await waitForFile(join(startCapture, "stdin"));
 
     seedAcceptanceSessions(homeDir, repo);
     attachAcceptanceDispatchSession(

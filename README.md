@@ -122,6 +122,8 @@ Dispatch run state is local SQLite state, not repo YAML. See `docs/dispatch-run-
 Persisted dispatch runs are local SQLite records. Dispatch commands require `remote.origin.url` so local runs can be tied to a repo name. `foreman dispatch create` queues a ready chunk in SQLite only; it does not launch agents, create worktrees, create attempts, or mutate task YAML.
 
 ```sh
+foreman dispatch start FOREMAN-1/parser --tool codex
+foreman dispatch start FOREMAN-1/parser --tool claude-code --stage review
 foreman dispatch create FOREMAN-1/parser
 foreman dispatch create FOREMAN-1/parser --stage review
 foreman dispatch claim <run-id-or-prefix> --tool codex
@@ -139,7 +141,9 @@ foreman dispatch show <run-id-or-prefix>
 foreman dispatch show <run-id-or-prefix> --json
 ```
 
-`foreman dispatch create --json` returns `dispatch_run` and `readiness`. Requested dispatch stages are `plan`, `implement`, or `review`; `discovery` remains a pre-dispatch stage. `foreman dispatch prepare --json` returns the updated `dispatch_run`, `workspace`, and `changed`. `foreman dispatch prompt --json` returns `dispatch_prompt`. `foreman dispatch launch --json` returns the updated `dispatch_run` and `dispatch_launch`. `foreman dispatch finish --json` returns the updated `dispatch_run` and `changed`. `foreman dispatch cancel --json` returns the updated `dispatch_run` and `changed`. Only queued runs can be canceled; already canceled runs are successful no-ops. `foreman dispatch list --json` returns `dispatch_runs`. `foreman dispatch show --json` returns `dispatch_run`. Each run includes run fields, attempts, events, and any attempt-linked session overview.
+`foreman dispatch start --json` returns `dispatch_run`, `readiness`, `workspace`, `dispatch_launch`, and `steps`. `foreman dispatch create --json` returns `dispatch_run` and `readiness`. Requested dispatch stages are `plan`, `implement`, or `review`; `discovery` remains a pre-dispatch stage. `foreman dispatch prepare --json` returns the updated `dispatch_run`, `workspace`, and `changed`. `foreman dispatch prompt --json` returns `dispatch_prompt`. `foreman dispatch launch --json` returns the updated `dispatch_run` and `dispatch_launch`. `foreman dispatch finish --json` returns the updated `dispatch_run` and `changed`. `foreman dispatch cancel --json` returns the updated `dispatch_run` and `changed`. Only queued runs can be canceled; already canceled runs are successful no-ops. `foreman dispatch list --json` returns `dispatch_runs`. `foreman dispatch show --json` returns `dispatch_run`. Each run includes run fields, attempts, events, and any attempt-linked session overview.
+
+`foreman dispatch start` is the composed happy path for a ready chunk. It validates readiness, creates a queued run, claims it for the selected tool, prepares the task worktree, builds the prompt, launches the agent, and then returns immediately. It records the same SQLite events as the lower-level commands and stops on the first failure with any completed state still persisted for inspection or recovery.
 
 `foreman dispatch claim` moves a queued run to `claimed` for a selected local tool and records that choice as a run-level event. It does not create attempts, create worktrees, or launch an agent yet.
 
