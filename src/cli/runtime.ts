@@ -857,16 +857,26 @@ function createDispatchCommand(json: boolean, io: CliIo): Command {
     });
 
   configureCommand(dispatch.command("finish"), io)
-    .description("Finish a running dispatch run after its launched attempt has captured a session.")
+    .description("Finish a running dispatch run after launch completion is known.")
     .argument("<run-id-or-prefix>")
     .requiredOption("--status <status>", "succeeded or failed")
     .option("--message <message>", "optional terminal message; stored as error_message for failures")
-    .action((prefix: string, options: { status: string; message?: string }) => {
+    .option("--allow-missing-session", "allow --status failed when no Stop hook session was captured; requires --message")
+    .action((prefix: string, options: { status: string; message?: string; allowMissingSession?: boolean }) => {
       const status = parseDispatchFinishStatus(options.status);
+      if (options.allowMissingSession === true && status !== "failed") {
+        throw new CliError(
+          2,
+          "invalid_dispatch_finish_missing_session",
+          "--allow-missing-session can only be used with --status failed"
+        );
+      }
+
       const result = withForemanDatabase((db) =>
         finishDispatchRun(db, resolveDispatchRunIdOrThrow(db, prefix), {
           status,
-          message: options.message
+          message: options.message,
+          allowMissingSession: options.allowMissingSession
         })
       );
 

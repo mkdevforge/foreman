@@ -50,6 +50,7 @@ describe("Phase 13a dispatch finish CLI", () => {
       previous_attempt_status: "launching_agent",
       status: "succeeded",
       session_id: "018fe000-0000-7000-8000-000000000001",
+      finished_without_session: false,
       message: null
     });
 
@@ -85,8 +86,66 @@ describe("Phase 13a dispatch finish CLI", () => {
     });
     expect(JSON.parse(parsed.dispatch_run.events[1].data_json)).toMatchObject({
       status: "failed",
+      finished_without_session: false,
       message: "Tests failed"
     });
+  });
+
+  test("can explicitly fail a launched attempt that captured no session", () => {
+    const homeDir = createTempDir();
+    const cwd = createTempDir();
+    const runId = "run_019fe000-0000-7000-8000-000000000008";
+    seedRunningRun(homeDir, { runId, sessionId: null });
+
+    const failed = runForeman(cwd, homeDir, [
+      "dispatch",
+      "finish",
+      runId,
+      "--status",
+      "failed",
+      "--message",
+      "Agent process exited before Stop hook capture.",
+      "--allow-missing-session",
+      "--json"
+    ]);
+    const parsed = JSON.parse(failed.stdout);
+
+    expect(failed.exitCode).toBe(0);
+    expect(parsed.changed).toBe(true);
+    expect(parsed.dispatch_run).toMatchObject({
+      id: runId,
+      status: "failed",
+      finished_at: parsed.dispatch_run.updated_at
+    });
+    expect(parsed.dispatch_run.attempts[0]).toMatchObject({
+      status: "failed",
+      session_id: null,
+      error_message: "Agent process exited before Stop hook capture."
+    });
+    expect(JSON.parse(parsed.dispatch_run.events[1].data_json)).toEqual({
+      previous_run_status: "running",
+      previous_attempt_status: "launching_agent",
+      status: "failed",
+      session_id: null,
+      finished_without_session: true,
+      message: "Agent process exited before Stop hook capture."
+    });
+
+    const again = JSON.parse(
+      runForeman(cwd, homeDir, [
+        "dispatch",
+        "finish",
+        runId,
+        "--status",
+        "failed",
+        "--message",
+        "Agent process exited before Stop hook capture.",
+        "--allow-missing-session",
+        "--json"
+      ]).stdout
+    );
+    expect(again.changed).toBe(false);
+    expect(again.dispatch_run.events.map((event: any) => event.type)).toEqual(["agent_launched", "failed"]);
   });
 
   test("rejects unfinished shapes without mutating rows", () => {
@@ -96,7 +155,9 @@ describe("Phase 13a dispatch finish CLI", () => {
     const multipleAttemptsRunId = "run_019fe000-0000-7000-8000-000000000004";
     const alreadySucceededRunId = "run_019fe000-0000-7000-8000-000000000005";
     const terminalMismatchRunId = "run_019fe000-0000-7000-8000-000000000007";
+    const missingMessageRunId = "run_019fe000-0000-7000-8000-000000000009";
     seedRunningRun(homeDir, { runId: missingSessionRunId, sessionId: null });
+    seedRunningRun(homeDir, { runId: missingMessageRunId, sessionId: null });
     seedRunningRun(homeDir, {
       runId: multipleAttemptsRunId,
       sessionId: "018fe000-0000-7000-8000-000000000004",
@@ -130,6 +191,28 @@ describe("Phase 13a dispatch finish CLI", () => {
     const terminalMismatch = JSON.parse(
       runForeman(cwd, homeDir, ["dispatch", "finish", terminalMismatchRunId, "--status", "succeeded", "--json"]).stderr
     );
+    const missingFailureMessage = JSON.parse(
+      runForeman(cwd, homeDir, [
+        "dispatch",
+        "finish",
+        missingMessageRunId,
+        "--status",
+        "failed",
+        "--allow-missing-session",
+        "--json"
+      ]).stderr
+    );
+    const invalidMissingSessionStatus = JSON.parse(
+      runForeman(cwd, homeDir, [
+        "dispatch",
+        "finish",
+        missingSessionRunId,
+        "--status",
+        "succeeded",
+        "--allow-missing-session",
+        "--json"
+      ]).stderr
+    );
 
     expect(missingSession.error.code).toBe("dispatch_run_not_finishable");
     expect(missingSession.error.details.reason).toBe("missing_session");
@@ -137,6 +220,8 @@ describe("Phase 13a dispatch finish CLI", () => {
     expect(alreadyDifferent.error.details.reason).toBe("already_finished_with_different_status");
     expect(invalidStatus.error.code).toBe("invalid_dispatch_finish_status");
     expect(terminalMismatch.error.details.reason).toBe("terminal_state_mismatch");
+    expect(missingFailureMessage.error.details.reason).toBe("missing_failure_message");
+    expect(invalidMissingSessionStatus.error.code).toBe("invalid_dispatch_finish_missing_session");
 
     const shown = JSON.parse(runForeman(cwd, homeDir, ["dispatch", "show", missingSessionRunId, "--json"]).stdout);
     expect(shown.dispatch_run.status).toBe("running");

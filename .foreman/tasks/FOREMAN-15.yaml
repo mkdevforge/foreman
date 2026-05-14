@@ -1,0 +1,35 @@
+schema_version: 1
+id: FOREMAN-15
+title: Dispatch failure reconciliation
+source_ref: null
+description: Close the observed gap where launched dispatch attempts without a captured session can
+  remain running after the agent process exits before Stop hook attachment.
+status: done
+created_at: 2026-05-14T18:41:10.699Z
+updated_at: 2026-05-14T18:44:15.668Z
+chunks:
+  - id: finish-missing-session-failures
+    title: Finish no-session launch failures
+    spec: |
+      Add an explicit terminal failure path for launched dispatch attempts that never captured a
+      Stop-hook session.
+
+      Scope:
+      - Extend `foreman dispatch finish` instead of adding a separate lifecycle command.
+      - Keep `--status succeeded` session-backed.
+      - Keep `--status failed` session-backed by default.
+      - Add `--allow-missing-session` for `--status failed` only, requiring `--message`.
+      - Record in the terminal event whether the attempt was finished without a session.
+      - Update docs and tests.
+      - Dogfood the command against the stale failed real E2E launch rows if present.
+    status: done
+    stage: implement
+    created_at: 2026-05-14T18:41:10.756Z
+    updated_at: 2026-05-14T18:44:15.613Z
+    notes:
+      - ts: 2026-05-14T18:44:15.534Z
+        body: Implemented explicit no-session failure completion via dispatch finish --status failed
+          --allow-missing-session. Success remains session-backed; normal failure remains
+          session-backed unless explicitly allowed; no-session failure requires --message and
+          records finished_without_session in the terminal event. Dogfooded against the two stale
+          fresh-repo failed launch rows and verified build, focused tests, and full suite.

@@ -107,7 +107,7 @@ Pushed branch:
 ## Observations
 
 - Foreman correctly requires an origin remote before dispatch, and the fresh repo used `foreman-e2e-20260514` as the derived repo name.
-- The first failed Claude and Codex attempts remain local SQLite records in `running` state because Foreman does not yet have a terminal failure command for launched attempts without captured sessions.
+- The first failed Claude and Codex attempts originally remained local SQLite records in `running` state because Foreman did not yet have a terminal failure path for launched attempts without captured sessions. After adding `foreman dispatch finish --status failed --allow-missing-session`, both were closed as `failed` with terminal events whose data records `finished_without_session: true`.
 - Codex 0.130.0 currently warns that `codex_hooks` is deprecated in favor of `[features] hooks = true`, while the public hooks page still shows `codex_hooks` examples.
 - Codex user-level hooks require trust state before they execute. For this verification, trust was recorded only in the isolated temporary `CODEX_HOME`.
 - Hook error log had no new records from this verification; the only visible historical entry was from 2026-05-06.

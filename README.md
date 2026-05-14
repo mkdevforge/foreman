@@ -131,6 +131,7 @@ foreman dispatch prompt <run-id-or-prefix>
 foreman dispatch launch <run-id-or-prefix>
 foreman dispatch finish <run-id-or-prefix> --status succeeded
 foreman dispatch finish <run-id-or-prefix> --status failed --message "Tests failed"
+foreman dispatch finish <run-id-or-prefix> --status failed --message "Agent exited before hook capture" --allow-missing-session
 foreman dispatch cancel <run-id-or-prefix>
 foreman dispatch list
 foreman dispatch list --task FOREMAN-1 --chunk parser --status queued
@@ -150,7 +151,7 @@ foreman dispatch show <run-id-or-prefix> --json
 
 When a launched child later triggers the Foreman Stop hook, the hook ingests the session as usual and attaches the captured `session_id` to the matching dispatch attempt. Attachment appends one `session_attached` event and is idempotent. Foreman still does not infer success, retry, cancel live processes, or clean up worktrees.
 
-`foreman dispatch finish` explicitly marks a running, session-attached dispatch attempt as `succeeded` or `failed`. It records terminal timestamps and one terminal event. It does not infer completion from hook capture and still does not retry, cancel live processes, or clean up worktrees.
+`foreman dispatch finish` explicitly marks a running dispatch attempt as `succeeded` or `failed`. Successful completion requires a Stop-hook captured session. Failed completion also requires a captured session by default, but `--allow-missing-session` permits `--status failed` when the launched process exited before hook capture; that path requires `--message` so the terminal event explains the no-session failure. The command records terminal timestamps and one terminal event. It does not infer completion from hook capture and still does not retry, cancel live processes, or clean up worktrees.
 
 ## Active Work Context
 

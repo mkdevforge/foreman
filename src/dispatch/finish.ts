@@ -18,6 +18,7 @@ export type FinishDispatchRunResult =
 export interface FinishDispatchRunOptions {
   status: DispatchFinishStatus;
   message?: string | null;
+  allowMissingSession?: boolean;
   idGenerator?: IdGenerator;
   now?: NowGenerator;
 }
@@ -42,14 +43,18 @@ export function finishDispatchRun(
       return { kind: "missing" } satisfies FinishDispatchRunResult;
     }
 
-    const finishable = validateFinishable(existing, options.status);
+    const message = normalizeMessage(options.message);
+    const finishable = validateFinishable(existing, {
+      requestedStatus: options.status,
+      allowMissingSession: options.allowMissingSession === true,
+      message
+    });
     if (finishable !== null) {
       return finishable;
     }
 
     const attempt = existing.attempts[0];
     const timestamp = now();
-    const message = normalizeMessage(options.message);
     const attemptUpdated = updateDispatchAttemptStatus(db, {
       id: attempt.id,
       status: options.status,
@@ -86,6 +91,7 @@ export function finishDispatchRun(
         previous_attempt_status: attempt.status,
         status: options.status,
         session_id: attempt.session_id,
+        finished_without_session: attempt.session_id === null,
         message
       })
     });
@@ -110,7 +116,12 @@ export function finishDispatchRun(
       return { kind: "missing" } satisfies FinishDispatchRunResult;
     }
 
-    return validateFinishable(detail, options.status) ?? {
+    const message = normalizeMessage(options.message);
+    return validateFinishable(detail, {
+      requestedStatus: options.status,
+      allowMissingSession: options.allowMissingSession === true,
+      message
+    }) ?? {
       kind: "not_finishable",
       detail,
       reason: "status_changed"
@@ -120,15 +131,19 @@ export function finishDispatchRun(
 
 function validateFinishable(
   detail: DispatchRunDetail,
-  requestedStatus: DispatchFinishStatus
+  options: {
+    requestedStatus: DispatchFinishStatus;
+    allowMissingSession: boolean;
+    message: string | null;
+  }
 ): Exclude<FinishDispatchRunResult, { kind: "finished" | "missing" }> | null {
   if (isFinishedStatus(detail.run.status)) {
-    if (detail.run.status !== requestedStatus) {
+    if (detail.run.status !== options.requestedStatus) {
       return { kind: "not_finishable", detail, reason: "already_finished_with_different_status" };
     }
 
     const attempt = detail.attempts.length === 1 ? detail.attempts[0] : null;
-    return attempt?.status === requestedStatus
+    return attempt?.status === options.requestedStatus
       ? { kind: "already_finished", detail }
       : { kind: "not_finishable", detail, reason: "terminal_state_mismatch" };
   }
@@ -146,12 +161,18 @@ function validateFinishable(
   }
 
   const attempt = detail.attempts[0];
-  if (attempt.session_id === null) {
-    return { kind: "not_finishable", detail, reason: "missing_session" };
-  }
-
   if (attempt.status !== "launching_agent") {
     return { kind: "not_finishable", detail, reason: "attempt_status_not_launching_agent" };
+  }
+
+  if (attempt.session_id === null) {
+    if (options.requestedStatus !== "failed" || !options.allowMissingSession) {
+      return { kind: "not_finishable", detail, reason: "missing_session" };
+    }
+
+    if (options.message === null) {
+      return { kind: "not_finishable", detail, reason: "missing_failure_message" };
+    }
   }
 
   return null;
