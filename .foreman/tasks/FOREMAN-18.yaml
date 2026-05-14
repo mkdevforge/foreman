@@ -1,0 +1,48 @@
+schema_version: 1
+id: FOREMAN-18
+title: Dispatch merge command
+source_ref: null
+description: Add an explicit fast-forward merge command for reviewed, succeeded dispatch worktree branches.
+status: done
+created_at: 2026-05-14T23:09:56.344Z
+updated_at: 2026-05-14T23:15:17.890Z
+chunks:
+  - id: dispatch-merge-command
+    title: Dispatch merge command
+    spec: |
+      Add an explicit integration command for reviewed dispatch work.
+
+      Scope:
+      - Add `foreman dispatch merge <run-id-or-prefix>` with text and JSON output.
+      - Resolve run IDs by exact ID or unique prefix.
+      - Require `remote.origin.url` on the control repo and verify the run `repo_name`
+        matches the current repo.
+      - Require a succeeded dispatch run with exactly one succeeded attempt.
+      - Reuse workspace inspection to verify the recorded workspace path exists, is a Git
+        root, and is on the recorded worktree branch.
+      - Require the dispatch workspace to be clean; loose uncommitted or untracked files must
+        be reviewed and committed before merge.
+      - Require the current control repo worktree to be clean before merging.
+      - Merge the recorded worktree branch into the current control branch using fast-forward
+        only.
+      - Append one `merged` dispatch event after a successful merge and make reruns
+        idempotent when the branch is already reachable from the control repo HEAD.
+      - Do not commit loose workspace files, resolve conflicts, push, mark chunks done, or
+        clean up worktrees in this slice.
+
+      Expected outcome:
+      - A reviewed, succeeded dispatch run with committed work can be integrated into the
+        control repo with an auditable local event.
+      - Dirty workspaces, dirty control repos, non-succeeded runs, repo mismatches, branch
+        mismatches, and non-fast-forward histories fail explicitly without cleanup behavior.
+    status: done
+    stage: implement
+    created_at: 2026-05-14T23:09:59.229Z
+    updated_at: 2026-05-14T23:15:14.616Z
+    notes:
+      - ts: 2026-05-14T23:15:11.751Z
+        body: Implemented fast-forward dispatch merge. Added a merge helper and CLI command for succeeded
+          clean dispatch worktree branches, prompt guidance to commit workspace changes before
+          reporting finished, docs, JSON acceptance coverage, and focused tests for successful
+          merge, idempotent rerun, dirty workspace/control repo rejection, non-succeeded runs, and
+          non-fast-forward histories. Verified build, focused tests, and full suite.

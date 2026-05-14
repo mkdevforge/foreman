@@ -20,6 +20,7 @@ import {
   type FinishDispatchRunResult
 } from "../dispatch/finish";
 import { launchPreparedDispatchRun, type DispatchLaunch, type LaunchDispatchRunResult } from "../dispatch/launch";
+import { mergeDispatchRun, type DispatchMerge, type MergeDispatchRunResult } from "../dispatch/merge";
 import { prepareClaimedDispatchRun, type DispatchWorkspace, type PrepareDispatchRunResult } from "../dispatch/prepare";
 import { buildDispatchPrompt, type BuildDispatchPromptResult, type DispatchPrompt } from "../dispatch/prompt";
 import {
@@ -655,7 +656,7 @@ function createCatalogCommand(json: boolean, io: CliIo): Command {
 
 function createDispatchCommand(json: boolean, io: CliIo): Command {
   const dispatch = configureCommand(new Command("dispatch"), io)
-    .description("Start, create, claim, prepare, prompt, launch, inspect, finish, cancel, and query persisted dispatch runs.")
+    .description("Start, create, claim, prepare, prompt, launch, inspect, merge, finish, cancel, and query persisted dispatch runs.")
     .action(() => {
       throw new CliError(2, "missing_command", "missing dispatch command");
     });
@@ -1074,6 +1075,50 @@ function createDispatchCommand(json: boolean, io: CliIo): Command {
       });
     });
 
+  configureCommand(dispatch.command("merge"), io)
+    .description("Fast-forward merge a succeeded dispatch worktree branch into the current control repo.")
+    .argument("<run-id-or-prefix>")
+    .action((prefix: string) => {
+      const controlRepoRoot = findRepoRoot();
+      const repoRemote = getRequiredGitOriginRemote(controlRepoRoot);
+      const repoName = repoNameFromGitRemote(repoRemote);
+      const result = withForemanDatabase((db) =>
+        mergeDispatchRun(db, resolveDispatchRunIdOrThrow(db, prefix), { controlRepoRoot, repoName })
+      );
+
+      if (result.kind === "missing") {
+        throw new CliError(1, "dispatch_run_not_found", `dispatch run '${prefix}' was not found`);
+      }
+
+      if (result.kind === "repo_mismatch") {
+        throw new CliError(
+          2,
+          "dispatch_repo_mismatch",
+          `dispatch run '${result.detail.run.id}' belongs to repo '${result.expectedRepoName}', not '${result.actualRepoName ?? "null"}'`,
+          { dispatch_run: toJsonDispatchRunDetail(result.detail), repo_name: result.actualRepoName }
+        );
+      }
+
+      if (result.kind === "not_mergeable") {
+        throw new CliError(
+          2,
+          "dispatch_run_not_mergeable",
+          `dispatch run '${result.detail.run.id}' cannot be merged: ${result.reason}`,
+          {
+            dispatch_run: toJsonDispatchRunDetail(result.detail),
+            attempt_id: result.attempt?.id ?? null,
+            reason: result.reason
+          }
+        );
+      }
+
+      writeData(json, io, renderDispatchMerge(result), {
+        dispatch_run: toJsonDispatchRunDetail(result.detail),
+        merge: toJsonDispatchMerge(result.merge),
+        changed: result.kind === "merged"
+      });
+    });
+
   configureCommand(dispatch.command("finish"), io)
     .description("Finish a running dispatch run after launch completion is known.")
     .argument("<run-id-or-prefix>")
@@ -1191,6 +1236,7 @@ function resolveDispatchRunIdOrThrow(db: Database, prefix: string): string {
 
 type InspectedDispatchWorkspace = Extract<InspectDispatchWorkspaceResult, { kind: "inspected" }>;
 type DispatchWorkspaceDiffSuccess = Extract<DispatchWorkspaceDiffResult, { kind: "diff" }>;
+type DispatchMergeSuccess = Extract<MergeDispatchRunResult, { kind: "merged" | "already_merged" }>;
 
 function dispatchWorkspaceOrThrow(prefix: string, result: InspectDispatchWorkspaceResult): InspectedDispatchWorkspace {
   if (result.kind === "missing") {
@@ -2253,6 +2299,23 @@ function toJsonDispatchWorkspaceDiff(diff: DispatchWorkspaceDiff) {
   };
 }
 
+function toJsonDispatchMerge(merge: DispatchMerge) {
+  return {
+    run_id: merge.run_id,
+    attempt_id: merge.attempt_id,
+    control_repo_root: merge.control_repo_root,
+    control_branch: merge.control_branch,
+    workspace_path: merge.workspace_path,
+    worktree_branch: merge.worktree_branch,
+    previous_head: merge.previous_head,
+    new_head: merge.new_head,
+    merged_sha: merge.merged_sha,
+    changed: merge.changed,
+    fast_forward: merge.fast_forward,
+    merged_at: merge.merged_at
+  };
+}
+
 function toJsonDispatchAttempt(attempt: DispatchAttemptDetail) {
   return {
     id: attempt.id,
@@ -2776,6 +2839,19 @@ function renderDispatchWorkspaceInspection(result: InspectedDispatchWorkspace): 
 
 function renderDispatchWorkspaceDiff(result: DispatchWorkspaceDiffSuccess): string {
   return result.diff.text;
+}
+
+function renderDispatchMerge(result: DispatchMergeSuccess): string {
+  const action = result.kind === "merged" ? "Merged" : "Already merged";
+  return [
+    `${action} dispatch run ${result.detail.run.id}.`,
+    `Control branch: ${result.merge.control_branch ?? "detached"}`,
+    `Worktree branch: ${result.merge.worktree_branch}`,
+    `Previous HEAD: ${result.merge.previous_head}`,
+    `New HEAD: ${result.merge.new_head}`,
+    `Changed: ${result.merge.changed ? "yes" : "no"}`,
+    ""
+  ].join("\n");
 }
 
 function renderDispatchFinish(

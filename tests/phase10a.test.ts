@@ -59,6 +59,9 @@ describe("Phase 10a dispatch prompt preview CLI", () => {
     expect(prompt).toContain("  Answer: Not in this slice.");
     expect(prompt).toContain("- q_019fb000-0000-7000-8000-000000000002: Should unresolved ambiguity be guessed?");
     expect(prompt).toContain("- If required context is missing or ambiguous, do not guess.");
+    expect(prompt).toContain(
+      "- Unless explicitly instructed otherwise, commit completed workspace changes to the worktree branch before reporting finished."
+    );
 
     const textResult = runForeman(repo, homeDir, ["dispatch", "prompt", runId]);
     expect(textResult.stdout).toBe(prompt);

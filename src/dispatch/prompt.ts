@@ -133,6 +133,7 @@ function renderPrompt(
     "- Capture missing context as precise Foreman questions, then stop and report the block.",
     "- Do not launch unrelated tools or mutate unrelated task chunks.",
     "- Do not mark the chunk done unless the human explicitly asks for that state change.",
+    "- Unless explicitly instructed otherwise, commit completed workspace changes to the worktree branch before reporting finished.",
     "- When finished, report changed files, verification commands, and any residual risk.",
     ""
   ].join("\n");

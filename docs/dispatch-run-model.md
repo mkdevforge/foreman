@@ -123,6 +123,7 @@ The current user-facing dispatch surface reaches the first process-launch slice 
 - `foreman dispatch launch <run-id-or-prefix>`
 - `foreman dispatch workspace <run-id-or-prefix>`
 - `foreman dispatch diff <run-id-or-prefix> [--stat] [--name-only]`
+- `foreman dispatch merge <run-id-or-prefix>`
 - `foreman dispatch cancel <run-id-or-prefix>`
 - `foreman dispatch list [--task <id>] [--chunk <id>] [--status <status>]`
 - `foreman dispatch show <run-id-or-prefix>`
@@ -144,6 +145,8 @@ When a launched child later triggers a Foreman Stop hook, the hook captures the 
 `foreman dispatch workspace` resolves exact IDs or unique prefixes and inspects the recorded attempt worktree without mutating SQLite, YAML, branches, or files. It requires exactly one attempt with a workspace path and recorded worktree branch, verifies the workspace exists, is the Git root, and is on the recorded branch, then reports dirty state, porcelain file statuses, untracked files, upstream/ahead/behind counts when available, and recent commits. Unsupported states such as no attempt, multiple attempts, missing workspace path, missing workspace, or branch mismatch fail as command errors with structured JSON details.
 
 `foreman dispatch diff` performs the same workspace validation and then prints `git diff HEAD --` for tracked changes. `--stat` maps to `git diff --stat HEAD --`; `--name-only` maps to `git diff --name-only HEAD --`. The command intentionally follows Git diff semantics, so untracked files are visible through `dispatch workspace` but are not included in tracked diff output.
+
+`foreman dispatch merge` resolves exact IDs or unique prefixes, verifies the run belongs to the current control repo, and integrates only explicitly succeeded dispatch work. The run and its single attempt must both be `succeeded`; the recorded dispatch workspace must inspect cleanly; the current control repo worktree must also be clean. The command fast-forward merges the recorded worktree branch into the current control branch, then appends one `merged` event with the previous HEAD, new HEAD, merged branch SHA, workspace path, worktree branch, and control branch. If the branch is already reachable from the control repo HEAD, merge is a successful no-op without a duplicate event. Non-fast-forward histories are rejected for a later rebase/conflict-resolution slice. The command does not commit loose workspace files, resolve conflicts, push, mutate task YAML, mark chunks done, or clean up worktrees.
 
 `foreman dispatch finish` resolves exact IDs or unique prefixes and requires a `running` run with exactly one `launching_agent` attempt. `--status succeeded` always requires a captured `session_id`. `--status failed` requires a captured `session_id` by default, but `--allow-missing-session` permits closing a launched attempt that exited before Stop-hook capture; this no-session failure path requires `--message`. The command sets terminal timestamps and appends one attempt-level terminal event, including whether the attempt was finished without a session. Repeating the same terminal status is a successful no-op without a duplicate event. This command is explicit human or runner input; Foreman does not infer completion from hook capture alone.
 
