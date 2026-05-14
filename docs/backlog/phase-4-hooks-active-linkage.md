@@ -8,7 +8,7 @@ Connect ingestion to real Stop hook entry points and the soft active-context fil
 
 ## Resolved Decisions
 
-- Codex hook config location: install user-level Codex hooks to `~/.codex/hooks.json`, and ensure `[features] codex_hooks = true` in `~/.codex/config.toml` when needed. This follows current Codex docs that support both JSON and TOML hook definitions but recommend one representation per config layer.
+- Codex hook config location: install user-level Codex hooks to `~/.codex/hooks.json`, and ensure `[features] hooks = true` in `~/.codex/config.toml` when needed. This follows current Codex CLI behavior as of 0.130.0; older Codex docs used `codex_hooks`, but the CLI now warns to use `hooks`.
 - Active context staleness policy: active contexts older than 24 hours are stale for hook linkage. `foreman status` still shows stale active context clearly instead of hiding or auto-clearing it.
 
 ## Scope

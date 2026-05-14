@@ -51,7 +51,7 @@ describe("Phase 11a dispatch launch CLI", () => {
       attempt_id: "attempt_019fc000-0000-7000-8000-000000000001_1",
       tool: "codex",
       command: fakeCodex,
-      args: ["exec", "--ask-for-approval", "never", "--sandbox", "workspace-write", "--color", "never", "-"],
+      args: ["--ask-for-approval", "never", "exec", "--sandbox", "workspace-write", "--color", "never", "-"],
       cwd: repo
     });
     expect(parsed.dispatch_launch.process_id).toBeGreaterThan(0);
@@ -83,7 +83,8 @@ describe("Phase 11a dispatch launch CLI", () => {
     });
     expect(JSON.stringify(launchEvent)).not.toContain("Foreman Dispatch Prompt");
 
-    await waitForFile(join(captureDir, "stdin"));
+    const stdinPath = join(captureDir, "stdin");
+    await waitForFile(stdinPath);
     expect(realpathSync(readFileSync(join(captureDir, "cwd"), "utf8").trim())).toBe(realpathSync(repo));
     expect(readFileSync(join(captureDir, "argv"), "utf8").trim().split("\n")).toEqual([
       fakeCodex,
@@ -93,7 +94,7 @@ describe("Phase 11a dispatch launch CLI", () => {
     expect(readFileSync(join(captureDir, "attempt_id"), "utf8").trim()).toBe(
       parsed.dispatch_launch.attempt_id
     );
-    const stdin = readFileSync(join(captureDir, "stdin"), "utf8");
+    const stdin = await waitForFileText(stdinPath, "# Foreman Dispatch Prompt");
     expect(stdin).toContain("# Foreman Dispatch Prompt");
     expect(stdin).toContain("- Task: FOREMAN-11 - Dispatch agent launch");
     expect(stdin).toContain("- Chunk: dispatch-launch-command - Dispatch launch command");
@@ -129,7 +130,16 @@ describe("Phase 11a dispatch launch CLI", () => {
     expect(parsed.dispatch_launch).toMatchObject({
       tool: "claude-code",
       command: fakeClaude,
-      args: ["--print", "--input-format", "text", "--output-format", "stream-json", "--permission-mode", "acceptEdits"],
+      args: [
+        "--print",
+        "--input-format",
+        "text",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--permission-mode",
+        "acceptEdits"
+      ],
       cwd: repo
     });
 
@@ -305,6 +315,20 @@ async function waitForFile(path: string): Promise<void> {
   }
 
   throw new Error(`timed out waiting for ${path}`);
+}
+
+async function waitForFileText(path: string, expected: string): Promise<string> {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    if (existsSync(path)) {
+      const text = readFileSync(path, "utf8");
+      if (text.includes(expected)) {
+        return text;
+      }
+    }
+    await Bun.sleep(20);
+  }
+
+  return existsSync(path) ? readFileSync(path, "utf8") : "";
 }
 
 function createGitRepo(remote: string): string {

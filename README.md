@@ -47,7 +47,7 @@ Hook install is user-level in v0:
 
 - Claude Code writes `~/.claude/settings.json` under `hooks.Stop`.
 - Codex writes `~/.codex/hooks.json` under `hooks.Stop`.
-- Codex also ensures `[features] codex_hooks = true` in `~/.codex/config.toml`.
+- Codex also ensures `[features] hooks = true` in `~/.codex/config.toml`.
 
 Foreman preserves unrelated config entries and avoids duplicate Foreman Stop hooks.
 
@@ -146,7 +146,7 @@ foreman dispatch show <run-id-or-prefix> --json
 
 `foreman dispatch prompt` builds the deterministic launch prompt for a prepared run. Text output is the prompt body; JSON output includes prompt metadata plus the prompt text. It is read-only and does not launch agents, mutate SQLite, or mutate task YAML.
 
-`foreman dispatch launch` starts the claimed tool from the prepared workspace using that same prompt. Codex launches as `codex exec --ask-for-approval never --sandbox workspace-write --color never -`; Claude Code launches as `claude --print --input-format text --output-format stream-json --permission-mode acceptEdits`. The command records `building_prompt` and `launching_agent` attempt state, stores the child `process_id`, passes dispatch IDs through the child environment, and returns immediately.
+`foreman dispatch launch` starts the claimed tool from the prepared workspace using that same prompt. Codex launches as `codex --ask-for-approval never exec --sandbox workspace-write --color never -`; Claude Code launches as `claude --print --input-format text --output-format stream-json --verbose --permission-mode acceptEdits`. The command records `building_prompt` and `launching_agent` attempt state, stores the child `process_id`, passes dispatch IDs through the child environment, and returns immediately.
 
 When a launched child later triggers the Foreman Stop hook, the hook ingests the session as usual and attaches the captured `session_id` to the matching dispatch attempt. Attachment appends one `session_attached` event and is idempotent. Foreman still does not infer success, retry, cancel live processes, or clean up worktrees.
 

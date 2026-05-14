@@ -107,11 +107,11 @@ export function ensureCodexHooksFeature(configPath: string): boolean {
   const parsed = existingText.trim().length === 0 ? {} : parseToml(existingText, configPath);
   const features = isRecord(parsed.features) ? parsed.features : {};
 
-  if (features.codex_hooks === true) {
+  if (features.hooks === true) {
     return false;
   }
 
-  const updatedText = setTomlFeature(existingText, "codex_hooks", "true");
+  const updatedText = setTomlFeature(existingText, "hooks", "true");
   mkdirSync(dirname(configPath), { recursive: true });
   atomicWriteFile(configPath, updatedText);
   return true;

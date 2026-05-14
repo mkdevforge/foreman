@@ -1,0 +1,54 @@
+schema_version: 1
+id: FOREMAN-14
+title: Real dispatch verification fixes
+source_ref: null
+description: Track fixes and records from the fresh-repo real dispatch verification pass.
+status: done
+created_at: 2026-05-14T18:12:23.166Z
+updated_at: 2026-05-14T18:29:35.848Z
+chunks:
+  - id: real-launch-command-drift
+    title: Real launch command drift fixes
+    spec: |
+      Fix real Claude Code and Codex dispatch launch command drift discovered during fresh-repo
+      verification.
+
+      Scope:
+      - Add Claude Code's required `--verbose` flag when launching with
+        `--print --output-format stream-json`.
+      - Move Codex `--ask-for-approval never` before the `exec` subcommand for Codex CLI 0.130.0.
+      - Ensure Codex hook installation enables the current `[features] hooks = true` flag instead
+        of relying on the deprecated `codex_hooks` key.
+      - Update launch tests and user-facing docs to match the real command shape.
+      - Rebuild, run focused launch/install tests, and retry fresh-repo E2E dispatch for both
+        Claude Code and Codex.
+      - Do not change broader dispatch state behavior in this chunk.
+
+      Expected outcome:
+      - Real Claude Code no longer exits immediately with
+        `--output-format=stream-json requires --verbose`.
+      - Real Codex no longer exits immediately with `unexpected argument --ask-for-approval`.
+      - Fresh-repo Claude and Codex dispatch runs both attach sessions through Stop hooks and can
+        be explicitly finished.
+      - Foreman's documented dispatch launch command matches the tested implementation.
+    status: done
+    stage: implement
+    created_at: 2026-05-14T18:12:23.213Z
+    updated_at: 2026-05-14T18:29:35.798Z
+    notes:
+      - ts: 2026-05-14T18:29:35.741Z
+        body: Fresh-repo E2E completed against private GitHub repo mkajander/foreman-e2e-20260514. Fixed
+          Claude launch by adding --verbose for stream-json print mode, fixed Codex launch by
+          passing --ask-for-approval before exec, updated Codex install/docs to use [features] hooks
+          = true, and recorded successful real Claude and Codex dispatch runs with hook session
+          linkage. Verified bun run build, focused launch/install tests, full test suite, and
+          fresh-repo worktree bun tests.
+    dispatch:
+      status: ready
+      risk_level: low
+      approval_required: none
+      allowed_actions:
+        - edit_source
+        - run_tests
+      blocked_actions:
+        - unrelated_refactor

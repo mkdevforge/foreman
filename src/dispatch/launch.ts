@@ -353,8 +353,17 @@ function buildLaunchCommand(
 
   const args =
     tool === "claude-code"
-      ? ["--print", "--input-format", "text", "--output-format", "stream-json", "--permission-mode", "acceptEdits"]
-      : ["exec", "--ask-for-approval", "never", "--sandbox", "workspace-write", "--color", "never", "-"];
+      ? [
+          "--print",
+          "--input-format",
+          "text",
+          "--output-format",
+          "stream-json",
+          "--verbose",
+          "--permission-mode",
+          "acceptEdits"
+        ]
+      : ["--ask-for-approval", "never", "exec", "--sandbox", "workspace-write", "--color", "never", "-"];
 
   return {
     command,

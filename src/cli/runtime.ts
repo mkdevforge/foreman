@@ -251,7 +251,7 @@ function createProgram(json: boolean, io: CliIo): Command {
         "  Codex:      ~/.codex/hooks.json and ~/.codex/config.toml",
         "",
         "Codex install writes the Stop hook to hooks.json and enables",
-        "[features] codex_hooks = true in config.toml when needed."
+        "[features] hooks = true in config.toml when needed."
       ].join("\n")
     )
     .option("--tool <tool>", "claude-code, codex, or all")

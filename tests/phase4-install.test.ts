@@ -19,7 +19,7 @@ describe("Phase 4 hook installation", () => {
     expect(result.stdout).toContain("~/.claude/settings.json");
     expect(result.stdout).toContain("~/.codex/hooks.json");
     expect(result.stdout).toContain("~/.codex/config.toml");
-    expect(result.stdout).toContain("codex_hooks = true");
+    expect(result.stdout).toContain("hooks = true");
   });
 
   test("Claude install is idempotent and preserves unrelated settings", () => {
@@ -52,7 +52,7 @@ describe("Phase 4 hook installation", () => {
     expect(existsSync(join(homeDir, ".codex", "hooks.json"))).toBe(false);
   });
 
-  test("Codex install is idempotent, preserves hooks, and enables codex_hooks TOML", () => {
+  test("Codex install is idempotent, preserves hooks, and enables hooks TOML", () => {
     const homeDir = createTempDir();
     const hooksPath = join(homeDir, ".codex", "hooks.json");
     const configPath = join(homeDir, ".codex", "config.toml");
@@ -81,10 +81,27 @@ describe("Phase 4 hook installation", () => {
     expect(hooks.hooks.PostToolUse[0].hooks[0].command).toBe("echo post");
     expect(countCommands(hooks.hooks.Stop, "foreman-hook-stop-codex")).toBe(1);
     expect(countCommands(hooks.hooks.Stop, "echo keep")).toBe(1);
-    expect(toml.features.codex_hooks).toBe(true);
+    expect(toml.features.hooks).toBe(true);
     expect(toml.features.other).toBe(false);
     expect(toml.profiles.default.model).toBe("gpt-5.4-mini");
     expect(existsSync(join(homeDir, ".claude", "settings.json"))).toBe(false);
+  });
+
+  test("Codex install upgrades legacy codex_hooks feature flag without removing it", () => {
+    const homeDir = createTempDir();
+    const configPath = join(homeDir, ".codex", "config.toml");
+    mkdirSync(dirname(configPath), { recursive: true });
+    writeFileSync(configPath, "[features]\ncodex_hooks = true\n");
+
+    installForemanHooks({
+      tool: "codex",
+      homeDir,
+      codexHookPath: "/opt/foreman/foreman-hook-stop-codex"
+    });
+    const toml = Bun.TOML.parse(readFileSync(configPath, "utf8")) as any;
+
+    expect(toml.features.hooks).toBe(true);
+    expect(toml.features.codex_hooks).toBe(true);
   });
 
   test("foreman install --tool filters installed tools", () => {
