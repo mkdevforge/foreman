@@ -6,6 +6,7 @@ import { CliError, type ExitCode } from "./errors";
 import { formatJsonData, formatJsonError, renderTextError } from "./output";
 import { openForemanDatabase } from "../db/client";
 import { cancelQueuedDispatchRun, type CancelDispatchRunResult } from "../dispatch/cancel";
+import { cleanupDispatchRun, type CleanupDispatchRunResult, type DispatchCleanup } from "../dispatch/cleanup";
 import {
   claimQueuedDispatchRun,
   DISPATCH_TOOLS,
@@ -656,7 +657,9 @@ function createCatalogCommand(json: boolean, io: CliIo): Command {
 
 function createDispatchCommand(json: boolean, io: CliIo): Command {
   const dispatch = configureCommand(new Command("dispatch"), io)
-    .description("Start, create, claim, prepare, prompt, launch, inspect, merge, finish, cancel, and query persisted dispatch runs.")
+    .description(
+      "Start, create, claim, prepare, prompt, launch, inspect, merge, cleanup, finish, cancel, and query persisted dispatch runs."
+    )
     .action(() => {
       throw new CliError(2, "missing_command", "missing dispatch command");
     });
@@ -1119,6 +1122,55 @@ function createDispatchCommand(json: boolean, io: CliIo): Command {
       });
     });
 
+  configureCommand(dispatch.command("cleanup"), io)
+    .description("Remove a terminal dispatch run worktree after review or failure handling.")
+    .argument("<run-id-or-prefix>")
+    .option("--force", "remove dirty or unmerged terminal worktrees while preserving unsafe branches")
+    .action((prefix: string, options: { force?: boolean }) => {
+      const controlRepoRoot = findRepoRoot();
+      const repoRemote = getRequiredGitOriginRemote(controlRepoRoot);
+      const repoName = repoNameFromGitRemote(repoRemote);
+      const result = withForemanDatabase((db) =>
+        cleanupDispatchRun(db, resolveDispatchRunIdOrThrow(db, prefix), {
+          controlRepoRoot,
+          repoName,
+          force: options.force === true
+        })
+      );
+
+      if (result.kind === "missing") {
+        throw new CliError(1, "dispatch_run_not_found", `dispatch run '${prefix}' was not found`);
+      }
+
+      if (result.kind === "repo_mismatch") {
+        throw new CliError(
+          2,
+          "dispatch_repo_mismatch",
+          `dispatch run '${result.detail.run.id}' belongs to repo '${result.expectedRepoName}', not '${result.actualRepoName ?? "null"}'`,
+          { dispatch_run: toJsonDispatchRunDetail(result.detail), repo_name: result.actualRepoName }
+        );
+      }
+
+      if (result.kind === "not_cleanupable") {
+        throw new CliError(
+          2,
+          "dispatch_run_not_cleanupable",
+          `dispatch run '${result.detail.run.id}' cannot be cleaned up: ${result.reason}`,
+          {
+            dispatch_run: toJsonDispatchRunDetail(result.detail),
+            attempt_id: result.attempt?.id ?? null,
+            reason: result.reason
+          }
+        );
+      }
+
+      writeData(json, io, renderDispatchCleanup(result), {
+        dispatch_run: toJsonDispatchRunDetail(result.detail),
+        cleanup: toJsonDispatchCleanup(result.cleanup),
+        changed: result.kind === "cleaned"
+      });
+    });
+
   configureCommand(dispatch.command("finish"), io)
     .description("Finish a running dispatch run after launch completion is known.")
     .argument("<run-id-or-prefix>")
@@ -1237,6 +1289,7 @@ function resolveDispatchRunIdOrThrow(db: Database, prefix: string): string {
 type InspectedDispatchWorkspace = Extract<InspectDispatchWorkspaceResult, { kind: "inspected" }>;
 type DispatchWorkspaceDiffSuccess = Extract<DispatchWorkspaceDiffResult, { kind: "diff" }>;
 type DispatchMergeSuccess = Extract<MergeDispatchRunResult, { kind: "merged" | "already_merged" }>;
+type DispatchCleanupSuccess = Extract<CleanupDispatchRunResult, { kind: "cleaned" | "already_cleaned" }>;
 
 function dispatchWorkspaceOrThrow(prefix: string, result: InspectDispatchWorkspaceResult): InspectedDispatchWorkspace {
   if (result.kind === "missing") {
@@ -2316,6 +2369,23 @@ function toJsonDispatchMerge(merge: DispatchMerge) {
   };
 }
 
+function toJsonDispatchCleanup(cleanup: DispatchCleanup) {
+  return {
+    run_id: cleanup.run_id,
+    attempt_id: cleanup.attempt_id,
+    control_repo_root: cleanup.control_repo_root,
+    control_branch: cleanup.control_branch,
+    workspace_path: cleanup.workspace_path,
+    worktree_branch: cleanup.worktree_branch,
+    force: cleanup.force,
+    changed: cleanup.changed,
+    workspace_removed: cleanup.workspace_removed,
+    branch_deleted: cleanup.branch_deleted,
+    branch_delete_skipped_reason: cleanup.branch_delete_skipped_reason,
+    cleaned_at: cleanup.cleaned_at
+  };
+}
+
 function toJsonDispatchAttempt(attempt: DispatchAttemptDetail) {
   return {
     id: attempt.id,
@@ -2850,6 +2920,20 @@ function renderDispatchMerge(result: DispatchMergeSuccess): string {
     `Previous HEAD: ${result.merge.previous_head}`,
     `New HEAD: ${result.merge.new_head}`,
     `Changed: ${result.merge.changed ? "yes" : "no"}`,
+    ""
+  ].join("\n");
+}
+
+function renderDispatchCleanup(result: DispatchCleanupSuccess): string {
+  const action = result.kind === "cleaned" ? "Cleaned up" : "Already cleaned up";
+  return [
+    `${action} dispatch run ${result.detail.run.id}.`,
+    `Workspace: ${result.cleanup.workspace_path}`,
+    `Worktree branch: ${result.cleanup.worktree_branch}`,
+    `Workspace removed: ${result.cleanup.workspace_removed ? "yes" : "no"}`,
+    `Branch deleted: ${result.cleanup.branch_deleted ? "yes" : "no"}`,
+    `Branch delete skipped: ${result.cleanup.branch_delete_skipped_reason ?? "no"}`,
+    `Changed: ${result.cleanup.changed ? "yes" : "no"}`,
     ""
   ].join("\n");
 }

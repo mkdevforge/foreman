@@ -1,0 +1,59 @@
+schema_version: 1
+id: FOREMAN-19
+title: Dispatch cleanup command
+source_ref: null
+description: Add an explicit cleanup command for terminal dispatch run worktrees.
+status: done
+created_at: 2026-05-15T14:55:00.000Z
+updated_at: 2026-05-15T15:00:59.642Z
+chunks:
+  - id: dispatch-cleanup-command
+    title: Dispatch cleanup command
+    spec: |
+      Add an explicit cleanup command for terminal dispatch workspaces.
+
+      Scope:
+      - Add `foreman dispatch cleanup <run-id-or-prefix>` with text and JSON output.
+      - Resolve run IDs by exact ID or unique prefix.
+      - Require `remote.origin.url` on the control repo and verify the run `repo_name`
+        matches the current repo.
+      - Allow cleanup only for terminal runs: `succeeded`, `failed`, and `canceled`.
+      - Reuse workspace inspection to verify the recorded workspace path exists, is a Git
+        root, and is on the recorded worktree branch.
+      - For succeeded runs, require the worktree branch to be reachable from the current
+        control repo HEAD before cleanup unless `--force` is passed.
+      - For failed or canceled runs, require the workspace to be clean before cleanup unless
+        `--force` is passed.
+      - Remove the recorded sibling worktree and delete the local worktree branch only when
+        Git reports deletion is safe.
+      - Append one `cleaned_up` dispatch event and make reruns idempotent after the workspace
+        is already gone.
+      - Do not push, mutate task YAML, retry runs, infer task completion, or delete unsafe
+        branches in this slice.
+
+      Expected outcome:
+      - Finished dispatch runs can release their sibling worktrees through an auditable command.
+      - Successful unmerged work, dirty failed/canceled workspaces, repo mismatches, non-terminal
+        runs, and unsafe branch deletion fail explicitly without losing work.
+    status: done
+    stage: implement
+    created_at: 2026-05-15T14:55:00.000Z
+    updated_at: 2026-05-15T15:00:59.642Z
+    notes:
+      - ts: 2026-05-15T15:00:41.942Z
+        body: "Implemented dispatch cleanup: added cleanup helper and CLI command for terminal dispatch
+          worktrees, conservative merged/dirty safety checks, force behavior, branch deletion only
+          through safe git branch -d, idempotent cleaned_up event handling, docs, JSON acceptance
+          coverage, focused cleanup tests, and dogfooded a failed dispatch run cleanup plus
+          idempotent rerun. Verified build, focused tests, full suite, and chunk readiness."
+    dispatch:
+      status: ready
+      risk_level: low
+      approval_required: none
+      allowed_actions:
+        - edit_source
+        - run_tests
+        - create_worktree
+      blocked_actions:
+        - push_remote
+        - unsafe_branch_delete

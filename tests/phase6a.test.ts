@@ -146,6 +146,11 @@ describe("Phase 6a automated acceptance hardening", () => {
       "merge",
       "changed"
     ]);
+    expectJsonCommand(repo, homeDir, ["dispatch", "cleanup", claimedDispatchRun.dispatch_run.id], [
+      "dispatch_run",
+      "cleanup",
+      "changed"
+    ]);
     seedAcceptanceDispatchRuns(homeDir);
 
     expectJsonCommand(repo, homeDir, ["session", "list"], ["sessions"]);
