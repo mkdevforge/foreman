@@ -137,6 +137,7 @@ describe("Phase 20a dispatch reconcile CLI", () => {
     const liveRunId = "run_019ff000-0000-7000-8000-000000000004";
     const attachedRunId = "run_019ff000-0000-7000-8000-000000000005";
     const recentRunId = "run_019ff000-0000-7000-8000-000000000006";
+    const unexpectedProcessRunId = "run_019ff000-0000-7000-8000-000000000010";
     const sessionId = "018ff000-0000-7000-8000-000000000005";
     seedSession(homeDir, sessionId);
     seedDispatchRun(homeDir, {
@@ -161,6 +162,13 @@ describe("Phase 20a dispatch reconcile CLI", () => {
       attemptStatus: "preparing_workspace",
       processId: null
     });
+    seedDispatchRun(homeDir, {
+      runId: unexpectedProcessRunId,
+      status: "running",
+      updatedAt: "2026-05-12T10:00:00.000Z",
+      attemptStatus: "preparing_workspace",
+      processId: 45678
+    });
 
     const db = openForemanDatabase({ homeDir });
     try {
@@ -181,10 +189,16 @@ describe("Phase 20a dispatch reconcile CLI", () => {
         olderThanMs: 60 * 1000,
         now: () => "2026-05-14T10:00:00.000Z"
       });
+      const unexpectedProcess = reconcileDispatchRun(db, unexpectedProcessRunId, {
+        repoName: "foreman",
+        olderThanMs: 24 * 60 * 60 * 1000,
+        now: () => "2026-05-14T10:00:00.000Z"
+      });
 
       expect(live.kind).toBe("skipped");
       expect(attached.kind).toBe("skipped");
       expect(recent.kind).toBe("skipped");
+      expect(unexpectedProcess.kind).toBe("skipped");
       if (live.kind === "skipped") {
         expect(live.reconciliation.reason).toBe("process_alive");
       }
@@ -194,9 +208,16 @@ describe("Phase 20a dispatch reconcile CLI", () => {
       if (recent.kind === "skipped") {
         expect(recent.reconciliation.reason).toBe("not_stale");
       }
+      if (unexpectedProcess.kind === "skipped") {
+        expect(unexpectedProcess.reconciliation).toMatchObject({
+          reason: "preparing_workspace_has_process",
+          process_id: 45678
+        });
+      }
       expect(getDispatchRunDetailById(db, liveRunId)?.run.status).toBe("running");
       expect(getDispatchRunDetailById(db, attachedRunId)?.run.status).toBe("running");
       expect(getDispatchRunDetailById(db, recentRunId)?.run.status).toBe("running");
+      expect(getDispatchRunDetailById(db, unexpectedProcessRunId)?.run.status).toBe("running");
     } finally {
       db.close();
     }

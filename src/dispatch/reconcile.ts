@@ -230,6 +230,10 @@ function decideReconciliation(
 
   const attempt = detail.attempts[0];
   if (attempt.status === "preparing_workspace") {
+    if (attempt.process_id !== null) {
+      return skip("preparing_workspace_has_process", detail, attempt, attempt.process_id);
+    }
+
     return staleDecision(detail, attempt, options, "stale_preparing_workspace");
   }
 
