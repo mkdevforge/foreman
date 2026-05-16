@@ -1,40 +1,42 @@
 schema_version: 1
 id: FOREMAN-20
-title: Dispatch side-effect audit hardening
+title: Dispatch reconcile
 source_ref: null
-description: Harden dispatch merge and cleanup against partial Git and SQLite side-effect failures.
+description: Add explicit reconciliation for stale non-terminal dispatch runs.
 status: todo
 created_at: 2026-05-16T00:00:00.000Z
 updated_at: 2026-05-16T00:00:00.000Z
 chunks:
-  - id: dispatch-side-effect-recovery
-    title: Dispatch side-effect recovery
+  - id: dispatch-reconcile-command
+    title: Dispatch reconcile command
     spec: |
-      Harden dispatch operations that currently span Git side effects and SQLite audit events.
-
-      Problem:
-      - `foreman dispatch merge` fast-forwards Git before recording the `merged` event.
-      - `foreman dispatch cleanup` removes the worktree before recording the `cleaned_up` event.
-      - If SQLite writes fail after Git succeeds, local filesystem/history state can change without
-        a corresponding dispatch audit event.
+      Add an explicit recovery command for stale local dispatch rows that were abandoned by
+      earlier runner slices, process exits, or interrupted dogfood flows.
 
       Scope:
-      - Review merge and cleanup as cross-resource operations and define a minimal recovery model.
-      - Preserve the local single-user CLI stance; do not introduce distributed transactions or a
-        daemon requirement.
-      - Prefer idempotent, durable operation markers or reconciliation data that can explain and
-        repair "Git succeeded, SQLite event missing" cases.
-      - Add tests that inject failures around the Git/SQLite boundary for both merge and cleanup.
-      - Ensure rerunning merge or cleanup after a partial failure produces a clear result and does
-        not double-apply destructive Git operations.
-      - Update README and dispatch run model docs with the recovery/audit behavior.
-      - Do not add push, retry, relaunch, remote synchronization, or general stale-run reconciliation
-        behavior in this chunk.
+      - Add `foreman dispatch reconcile <run-id-or-prefix>` with text and JSON output.
+      - Add `foreman dispatch reconcile --all` for batch reconciliation.
+      - Resolve run IDs by exact ID or unique prefix.
+      - Require `remote.origin.url` on the control repo and verify each run `repo_name`
+        matches the current repo when `repo_name` is present.
+      - Detect stale `claimed` runs with no attempts.
+      - Detect stale `running` runs with a `preparing_workspace` attempt and no launched
+        process.
+      - Detect stale `running` runs with a `launching_agent` attempt whose recorded
+        `process_id` is no longer alive and no Stop-hook session was attached.
+      - Mark unrecoverable stale runs as `failed`, set terminal timestamps, and append a
+        reconciliation event with the previous status, attempt status, process id, and reason.
+      - Use a conservative `--older-than <duration>` threshold, defaulting to 24h.
+      - Make reruns idempotent for already-terminal rows.
+      - Dogfood against the existing stale local runs from earlier dispatch slices.
+      - Do not retry, relaunch, merge, cleanup worktrees, infer success, mutate task YAML, or
+        harden Git/SQLite partial side effects in this chunk.
 
       Expected outcome:
-      - Dispatch merge and cleanup have an explicit, tested recovery story for partial local failures.
-      - A future UI can distinguish normal completion, already-applied side effects, and recovered
-        audit records from regular command failures.
+      - Old local dispatch rows no longer stay permanently `claimed` or `running` after the
+        underlying process or preparation step is gone.
+      - Humans and the future UI get explicit terminal failure records instead of ambiguous
+        abandoned run state.
     status: todo
     stage: plan
     created_at: 2026-05-16T00:00:00.000Z
