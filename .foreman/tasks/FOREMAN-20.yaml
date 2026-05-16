@@ -1,0 +1,42 @@
+schema_version: 1
+id: FOREMAN-20
+title: Dispatch side-effect audit hardening
+source_ref: null
+description: Harden dispatch merge and cleanup against partial Git and SQLite side-effect failures.
+status: todo
+created_at: 2026-05-16T00:00:00.000Z
+updated_at: 2026-05-16T00:00:00.000Z
+chunks:
+  - id: dispatch-side-effect-recovery
+    title: Dispatch side-effect recovery
+    spec: |
+      Harden dispatch operations that currently span Git side effects and SQLite audit events.
+
+      Problem:
+      - `foreman dispatch merge` fast-forwards Git before recording the `merged` event.
+      - `foreman dispatch cleanup` removes the worktree before recording the `cleaned_up` event.
+      - If SQLite writes fail after Git succeeds, local filesystem/history state can change without
+        a corresponding dispatch audit event.
+
+      Scope:
+      - Review merge and cleanup as cross-resource operations and define a minimal recovery model.
+      - Preserve the local single-user CLI stance; do not introduce distributed transactions or a
+        daemon requirement.
+      - Prefer idempotent, durable operation markers or reconciliation data that can explain and
+        repair "Git succeeded, SQLite event missing" cases.
+      - Add tests that inject failures around the Git/SQLite boundary for both merge and cleanup.
+      - Ensure rerunning merge or cleanup after a partial failure produces a clear result and does
+        not double-apply destructive Git operations.
+      - Update README and dispatch run model docs with the recovery/audit behavior.
+      - Do not add push, retry, relaunch, remote synchronization, or general stale-run reconciliation
+        behavior in this chunk.
+
+      Expected outcome:
+      - Dispatch merge and cleanup have an explicit, tested recovery story for partial local failures.
+      - A future UI can distinguish normal completion, already-applied side effects, and recovered
+        audit records from regular command failures.
+    status: todo
+    stage: plan
+    created_at: 2026-05-16T00:00:00.000Z
+    updated_at: 2026-05-16T00:00:00.000Z
+    notes: []
