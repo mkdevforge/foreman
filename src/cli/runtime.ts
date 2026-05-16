@@ -25,6 +25,12 @@ import { mergeDispatchRun, type DispatchMerge, type MergeDispatchRunResult } fro
 import { prepareClaimedDispatchRun, type DispatchWorkspace, type PrepareDispatchRunResult } from "../dispatch/prepare";
 import { buildDispatchPrompt, type BuildDispatchPromptResult, type DispatchPrompt } from "../dispatch/prompt";
 import {
+  reconcileDispatchRun,
+  reconcileDispatchRuns,
+  type DispatchReconciliation,
+  type ReconcileDispatchRunResult
+} from "../dispatch/reconcile";
+import {
   buildDispatchWorkspaceDiff,
   inspectDispatchWorkspace,
   type DispatchDiffMode,
@@ -658,7 +664,7 @@ function createCatalogCommand(json: boolean, io: CliIo): Command {
 function createDispatchCommand(json: boolean, io: CliIo): Command {
   const dispatch = configureCommand(new Command("dispatch"), io)
     .description(
-      "Start, create, claim, prepare, prompt, launch, inspect, merge, cleanup, finish, cancel, and query persisted dispatch runs."
+      "Start, create, claim, prepare, prompt, launch, inspect, merge, cleanup, reconcile, finish, cancel, and query persisted dispatch runs."
     )
     .action(() => {
       throw new CliError(2, "missing_command", "missing dispatch command");
@@ -1171,6 +1177,59 @@ function createDispatchCommand(json: boolean, io: CliIo): Command {
       });
     });
 
+  configureCommand(dispatch.command("reconcile"), io)
+    .description("Mark stale abandoned dispatch runs failed without retrying or cleaning worktrees.")
+    .argument("[run-id-or-prefix]")
+    .option("--all", "reconcile all local claimed/running dispatch runs for the current repo")
+    .option("--older-than <duration>", "stale threshold as a compact duration, default 24h")
+    .action((prefix: string | undefined, options: { all?: boolean; olderThan?: string }) => {
+      if ((prefix !== undefined) === (options.all === true)) {
+        throw new CliError(
+          2,
+          "invalid_dispatch_reconcile_target",
+          "provide exactly one dispatch run id/prefix or --all"
+        );
+      }
+
+      const controlRepoRoot = findRepoRoot();
+      const repoRemote = getRequiredGitOriginRemote(controlRepoRoot);
+      const repoName = repoNameFromGitRemote(repoRemote);
+      const olderThanMs = parseDispatchOlderThanMs(options.olderThan);
+
+      if (options.all === true) {
+        const results = withForemanDatabase((db) => reconcileDispatchRuns(db, { repoName, olderThanMs }));
+        writeData(json, io, renderDispatchReconcileBatch(results), {
+          reconciliations: results.map(toJsonDispatchReconcileResult),
+          changed: results.some((result) => result.kind === "reconciled"),
+          older_than_ms: olderThanMs
+        });
+        return;
+      }
+
+      const result = withForemanDatabase((db) =>
+        reconcileDispatchRun(db, resolveDispatchRunIdOrThrow(db, prefix!), { repoName, olderThanMs })
+      );
+
+      if (result.kind === "missing") {
+        throw new CliError(1, "dispatch_run_not_found", `dispatch run '${prefix}' was not found`);
+      }
+
+      if (result.kind === "repo_mismatch") {
+        throw new CliError(
+          2,
+          "dispatch_repo_mismatch",
+          `dispatch run '${result.detail.run.id}' belongs to repo '${result.expectedRepoName}', not '${result.actualRepoName}'`,
+          { dispatch_run: toJsonDispatchRunDetail(result.detail), repo_name: result.actualRepoName }
+        );
+      }
+
+      writeData(json, io, renderDispatchReconcile(result), {
+        dispatch_run: toJsonDispatchRunDetail(result.detail),
+        reconciliation: toJsonDispatchReconciliation(result.reconciliation),
+        changed: result.kind === "reconciled"
+      });
+    });
+
   configureCommand(dispatch.command("finish"), io)
     .description("Finish a running dispatch run after launch completion is known.")
     .argument("<run-id-or-prefix>")
@@ -1290,6 +1349,7 @@ type InspectedDispatchWorkspace = Extract<InspectDispatchWorkspaceResult, { kind
 type DispatchWorkspaceDiffSuccess = Extract<DispatchWorkspaceDiffResult, { kind: "diff" }>;
 type DispatchMergeSuccess = Extract<MergeDispatchRunResult, { kind: "merged" | "already_merged" }>;
 type DispatchCleanupSuccess = Extract<CleanupDispatchRunResult, { kind: "cleaned" | "already_cleaned" }>;
+type DispatchReconcileSingleSuccess = Exclude<ReconcileDispatchRunResult, { kind: "missing" | "repo_mismatch" }>;
 
 function dispatchWorkspaceOrThrow(prefix: string, result: InspectDispatchWorkspaceResult): InspectedDispatchWorkspace {
   if (result.kind === "missing") {
@@ -1396,6 +1456,38 @@ function parseDispatchDiffMode(options: { stat?: boolean; nameOnly?: boolean }):
   }
 
   return "full";
+}
+
+function parseDispatchOlderThanMs(value: string | undefined): number {
+  const duration = value ?? "24h";
+  const match = /^([1-9]\d*)([mhdw])$/.exec(duration);
+  if (match === null) {
+    throw new CliError(
+      2,
+      "invalid_dispatch_older_than",
+      "invalid --older-than value; expected compact duration like 30m, 24h, 7d, or 2w"
+    );
+  }
+
+  const amount = Number(match[1]);
+  if (!Number.isSafeInteger(amount)) {
+    throw new CliError(2, "invalid_dispatch_older_than", "invalid --older-than value; duration is too large");
+  }
+
+  const unit = match[2] as "m" | "h" | "d" | "w";
+  const unitMs = {
+    m: 60 * 1000,
+    h: 60 * 60 * 1000,
+    d: 24 * 60 * 60 * 1000,
+    w: 7 * 24 * 60 * 60 * 1000
+  }[unit];
+  const durationMs = amount * unitMs;
+
+  if (!Number.isSafeInteger(durationMs) || !Number.isFinite(durationMs)) {
+    throw new CliError(2, "invalid_dispatch_older_than", "invalid --older-than value; duration is too large");
+  }
+
+  return durationMs;
 }
 
 function createSessionCommand(json: boolean, io: CliIo): Command {
@@ -2386,6 +2478,52 @@ function toJsonDispatchCleanup(cleanup: DispatchCleanup) {
   };
 }
 
+function toJsonDispatchReconcileResult(result: ReconcileDispatchRunResult) {
+  if (result.kind === "missing") {
+    return {
+      kind: result.kind,
+      changed: false
+    };
+  }
+
+  if (result.kind === "repo_mismatch") {
+    return {
+      kind: result.kind,
+      changed: false,
+      reason: "repo_mismatch",
+      expected_repo_name: result.expectedRepoName,
+      actual_repo_name: result.actualRepoName,
+      dispatch_run: toJsonDispatchRunDetail(result.detail)
+    };
+  }
+
+  return {
+    kind: result.kind,
+    changed: result.kind === "reconciled",
+    reason: result.reconciliation.reason,
+    dispatch_run: toJsonDispatchRunDetail(result.detail),
+    reconciliation: toJsonDispatchReconciliation(result.reconciliation)
+  };
+}
+
+function toJsonDispatchReconciliation(reconciliation: DispatchReconciliation) {
+  return {
+    run_id: reconciliation.run_id,
+    attempt_id: reconciliation.attempt_id,
+    previous_run_status: reconciliation.previous_run_status,
+    previous_attempt_status: reconciliation.previous_attempt_status,
+    status: reconciliation.status,
+    attempt_status: reconciliation.attempt_status,
+    reason: reconciliation.reason,
+    changed: reconciliation.changed,
+    process_id: reconciliation.process_id,
+    stale_reference_at: reconciliation.stale_reference_at,
+    stale_after_ms: reconciliation.stale_after_ms,
+    checked_at: reconciliation.checked_at,
+    reconciled_at: reconciliation.reconciled_at
+  };
+}
+
 function toJsonDispatchAttempt(attempt: DispatchAttemptDetail) {
   return {
     id: attempt.id,
@@ -2936,6 +3074,42 @@ function renderDispatchCleanup(result: DispatchCleanupSuccess): string {
     `Changed: ${result.cleanup.changed ? "yes" : "no"}`,
     ""
   ].join("\n");
+}
+
+function renderDispatchReconcile(result: DispatchReconcileSingleSuccess): string {
+  if (result.kind === "reconciled") {
+    return [
+      `Reconciled dispatch run ${result.detail.run.id} as failed.`,
+      `Reason: ${result.reconciliation.reason}`,
+      ""
+    ].join("\n");
+  }
+
+  if (result.kind === "already_terminal") {
+    return `Dispatch run ${result.detail.run.id} is already ${result.detail.run.status}.\n`;
+  }
+
+  return `Skipped dispatch run ${result.detail.run.id}: ${result.reconciliation.reason}.\n`;
+}
+
+function renderDispatchReconcileBatch(results: ReconcileDispatchRunResult[]): string {
+  if (results.length === 0) {
+    return "No claimed or running dispatch runs to reconcile.\n";
+  }
+
+  const lines = results.map((result) => {
+    if (result.kind === "missing") {
+      return "missing changed=no";
+    }
+
+    if (result.kind === "repo_mismatch") {
+      return `${result.detail.run.id} repo_mismatch changed=no expected=${result.expectedRepoName} actual=${result.actualRepoName}`;
+    }
+
+    return `${result.detail.run.id} ${result.kind} changed=${result.kind === "reconciled" ? "yes" : "no"} reason=${result.reconciliation.reason}`;
+  });
+
+  return `${lines.join("\n")}\n`;
 }
 
 function renderDispatchFinish(

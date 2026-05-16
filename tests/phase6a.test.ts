@@ -152,6 +152,11 @@ describe("Phase 6a automated acceptance hardening", () => {
       "changed"
     ]);
     seedAcceptanceDispatchRuns(homeDir);
+    expectJsonCommand(repo, homeDir, ["dispatch", "reconcile", "--all"], [
+      "reconciliations",
+      "changed",
+      "older_than_ms"
+    ]);
 
     expectJsonCommand(repo, homeDir, ["session", "list"], ["sessions"]);
     expectJsonCommand(repo, homeDir, ["session", "show", "018f6000-0000-7000-8000-000000000001", "--full"], [

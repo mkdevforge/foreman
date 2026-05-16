@@ -3,9 +3,9 @@ id: FOREMAN-20
 title: Dispatch reconcile
 source_ref: null
 description: Add explicit reconciliation for stale non-terminal dispatch runs.
-status: todo
+status: done
 created_at: 2026-05-16T00:00:00.000Z
-updated_at: 2026-05-16T00:00:00.000Z
+updated_at: 2026-05-16T14:10:20.152Z
 chunks:
   - id: dispatch-reconcile-command
     title: Dispatch reconcile command
@@ -37,8 +37,12 @@ chunks:
         underlying process or preparation step is gone.
       - Humans and the future UI get explicit terminal failure records instead of ambiguous
         abandoned run state.
-    status: todo
-    stage: plan
+    status: done
+    stage: implement
     created_at: 2026-05-16T00:00:00.000Z
-    updated_at: 2026-05-16T00:00:00.000Z
-    notes: []
+    updated_at: 2026-05-16T14:10:20.152Z
+    notes:
+      - ts: 2026-05-16T14:10:06.773Z
+        body: Implemented dispatch reconcile command with single and --all modes, stale
+          claimed/preparing/dead-launch detection, repo-name checks, JSON output, docs, tests, and
+          local dogfood reconciliation.
