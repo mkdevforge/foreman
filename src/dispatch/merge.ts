@@ -14,6 +14,7 @@ export interface MergeDispatchRunOptions {
   repoName: string;
   idGenerator?: IdGenerator;
   now?: NowGenerator;
+  beforeFinalEventWrite?: () => void;
 }
 
 export interface DispatchMerge {
@@ -29,6 +30,8 @@ export interface DispatchMerge {
   changed: boolean;
   fast_forward: boolean;
   merged_at: string | null;
+  audit_recovered: boolean;
+  audit_recovery_reason: string | null;
 }
 
 export type MergeDispatchRunResult =
@@ -103,8 +106,28 @@ export function mergeDispatchRun(db: Database, runId: string, options: MergeDisp
   const previousHead = gitOutputRequired(options.controlRepoRoot, ["rev-parse", "HEAD"]);
   const branchHead = gitOutputRequired(options.controlRepoRoot, ["rev-parse", inspected.workspace.expected_branch]);
   const controlBranch = gitOutput(options.controlRepoRoot, ["branch", "--show-current"]) || null;
+  const mergedEvent = findLatestAttemptEvent(inspected.detail, inspected.attempt.id, "merged");
+  const mergeStartedEvent = findLatestAttemptEvent(inspected.detail, inspected.attempt.id, "merge_started");
+  const now = options.now ?? defaultNow;
+  const idGenerator = options.idGenerator ?? uuidv7;
 
   if (isAncestor(options.controlRepoRoot, branchHead, "HEAD")) {
+    if (mergedEvent === null && mergeStartedEvent !== null) {
+      return recoverMergedAudit(db, {
+        runId,
+        detail: inspected.detail,
+        attempt: inspected.attempt,
+        workspace: inspected.workspace,
+        controlRepoRoot: options.controlRepoRoot,
+        controlBranch,
+        currentHead: previousHead,
+        branchHead,
+        startedEvent: mergeStartedEvent,
+        now,
+        idGenerator
+      });
+    }
+
     return {
       kind: "already_merged",
       detail: inspected.detail,
@@ -122,7 +145,9 @@ export function mergeDispatchRun(db: Database, runId: string, options: MergeDisp
         merged_sha: branchHead,
         changed: false,
         fast_forward: true,
-        merged_at: null
+        merged_at: null,
+        audit_recovered: false,
+        audit_recovery_reason: null
       }
     };
   }
@@ -136,10 +161,25 @@ export function mergeDispatchRun(db: Database, runId: string, options: MergeDisp
     };
   }
 
+  const mergeStartedEventId = insertMergeStartedEvent(db, {
+    runId,
+    attemptId: inspected.attempt.id,
+    ts: now(),
+    idGenerator,
+    previousHead,
+    expectedNewHead: branchHead,
+    branchHead,
+    workspacePath: inspected.workspace.workspace_path,
+    worktreeBranch: inspected.workspace.expected_branch,
+    controlRepoRoot: options.controlRepoRoot,
+    controlBranch
+  });
+
   runGitRequired(options.controlRepoRoot, ["merge", "--ff-only", inspected.workspace.expected_branch], "dispatch_merge_failed");
 
-  const timestamp = (options.now ?? defaultNow)();
-  const idGenerator = options.idGenerator ?? uuidv7;
+  options.beforeFinalEventWrite?.();
+
+  const timestamp = now();
   const newHead = gitOutputRequired(options.controlRepoRoot, ["rev-parse", "HEAD"]);
   const eventId = `evt_${idGenerator()}`;
 
@@ -173,7 +213,10 @@ export function mergeDispatchRun(db: Database, runId: string, options: MergeDisp
         workspace_path: inspected.workspace.workspace_path,
         control_repo_root: options.controlRepoRoot,
         control_branch: controlBranch,
-        fast_forward: true
+        fast_forward: true,
+        merge_started_event_id: mergeStartedEventId,
+        audit_recovered: false,
+        audit_recovery_reason: null
       })
     });
 
@@ -199,7 +242,9 @@ export function mergeDispatchRun(db: Database, runId: string, options: MergeDisp
         merged_sha: branchHead,
         changed: true,
         fast_forward: true,
-        merged_at: timestamp
+        merged_at: timestamp,
+        audit_recovered: false,
+        audit_recovery_reason: null
       }
     } satisfies MergeDispatchRunResult;
   });
@@ -226,6 +271,148 @@ function validateMergeableStatus(detail: DispatchRunDetail): Extract<MergeDispat
   }
 
   return null;
+}
+
+function recoverMergedAudit(
+  db: Database,
+  input: {
+    runId: string;
+    detail: DispatchRunDetail;
+    attempt: DispatchAttemptDetail;
+    workspace: DispatchWorkspaceInspection;
+    controlRepoRoot: string;
+    controlBranch: string | null;
+    currentHead: string;
+    branchHead: string;
+    startedEvent: DispatchRunDetail["events"][number];
+    now: NowGenerator;
+    idGenerator: IdGenerator;
+  }
+): Extract<MergeDispatchRunResult, { kind: "already_merged" }> {
+  const timestamp = input.now();
+  const startedData = parseEventData(input.startedEvent);
+  const previousHead = stringFromEventData(startedData, "previous_head") ?? input.currentHead;
+  const newHead =
+    stringFromEventData(startedData, "expected_new_head") ??
+    stringFromEventData(startedData, "new_head") ??
+    stringFromEventData(startedData, "merged_sha") ??
+    input.branchHead;
+  const eventId = `evt_${input.idGenerator()}`;
+  const recoveryReason = "merge_event_missing_after_git_side_effect";
+
+  insertDispatchEvent(db, {
+    id: eventId,
+    runId: input.runId,
+    attemptId: input.attempt.id,
+    ts: timestamp,
+    type: "merged",
+    message: "Recovered missing dispatch merge audit event after Git side effect was already applied.",
+    dataJson: JSON.stringify({
+      previous_head: previousHead,
+      new_head: newHead,
+      merged_sha: input.branchHead,
+      worktree_branch: input.workspace.expected_branch,
+      workspace_path: input.workspace.workspace_path,
+      control_repo_root: input.controlRepoRoot,
+      control_branch: input.controlBranch,
+      fast_forward: true,
+      merge_started_event_id: input.startedEvent.id,
+      audit_recovered: true,
+      audit_recovery_reason: recoveryReason
+    })
+  });
+
+  const detail = getDispatchRunDetailById(db, input.runId);
+  if (detail === null) {
+    throw new Error(`recovered merged dispatch run '${input.runId}' could not be read back`);
+  }
+
+  return {
+    kind: "already_merged",
+    detail,
+    attempt: input.attempt,
+    workspace: input.workspace,
+    merge: {
+      run_id: detail.run.id,
+      attempt_id: input.attempt.id,
+      control_repo_root: input.controlRepoRoot,
+      control_branch: input.controlBranch,
+      workspace_path: input.workspace.workspace_path,
+      worktree_branch: input.workspace.expected_branch,
+      previous_head: previousHead,
+      new_head: newHead,
+      merged_sha: input.branchHead,
+      changed: false,
+      fast_forward: true,
+      merged_at: timestamp,
+      audit_recovered: true,
+      audit_recovery_reason: recoveryReason
+    }
+  };
+}
+
+function insertMergeStartedEvent(
+  db: Database,
+  input: {
+    runId: string;
+    attemptId: string;
+    ts: string;
+    idGenerator: IdGenerator;
+    previousHead: string;
+    expectedNewHead: string;
+    branchHead: string;
+    workspacePath: string;
+    worktreeBranch: string;
+    controlRepoRoot: string;
+    controlBranch: string | null;
+  }
+): string {
+  const eventId = `evt_${input.idGenerator()}`;
+  insertDispatchEvent(db, {
+    id: eventId,
+    runId: input.runId,
+    attemptId: input.attemptId,
+    ts: input.ts,
+    type: "merge_started",
+    message: "Started dispatch merge Git side effect.",
+    dataJson: JSON.stringify({
+      previous_head: input.previousHead,
+      expected_new_head: input.expectedNewHead,
+      merged_sha: input.branchHead,
+      worktree_branch: input.worktreeBranch,
+      workspace_path: input.workspacePath,
+      control_repo_root: input.controlRepoRoot,
+      control_branch: input.controlBranch,
+      fast_forward: true
+    })
+  });
+
+  return eventId;
+}
+
+function findLatestAttemptEvent(detail: DispatchRunDetail, attemptId: string, type: string): DispatchRunDetail["events"][number] | null {
+  for (let index = detail.events.length - 1; index >= 0; index -= 1) {
+    const event = detail.events[index];
+    if (event.attempt_id === attemptId && event.type === type) {
+      return event;
+    }
+  }
+
+  return null;
+}
+
+function parseEventData(event: DispatchRunDetail["events"][number]): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(event.data_json) as unknown;
+    return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function stringFromEventData(data: Record<string, unknown>, key: string): string | null {
+  const value = data[key];
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 function isAncestor(cwd: string, ancestor: string, descendant: string): boolean {

@@ -1124,7 +1124,7 @@ function createDispatchCommand(json: boolean, io: CliIo): Command {
       writeData(json, io, renderDispatchMerge(result), {
         dispatch_run: toJsonDispatchRunDetail(result.detail),
         merge: toJsonDispatchMerge(result.merge),
-        changed: result.kind === "merged"
+        changed: result.merge.changed || result.merge.audit_recovered
       });
     });
 
@@ -1173,7 +1173,7 @@ function createDispatchCommand(json: boolean, io: CliIo): Command {
       writeData(json, io, renderDispatchCleanup(result), {
         dispatch_run: toJsonDispatchRunDetail(result.detail),
         cleanup: toJsonDispatchCleanup(result.cleanup),
-        changed: result.kind === "cleaned"
+        changed: result.cleanup.changed || result.cleanup.audit_recovered
       });
     });
 
@@ -2457,7 +2457,9 @@ function toJsonDispatchMerge(merge: DispatchMerge) {
     merged_sha: merge.merged_sha,
     changed: merge.changed,
     fast_forward: merge.fast_forward,
-    merged_at: merge.merged_at
+    merged_at: merge.merged_at,
+    audit_recovered: merge.audit_recovered,
+    audit_recovery_reason: merge.audit_recovery_reason
   };
 }
 
@@ -2474,7 +2476,9 @@ function toJsonDispatchCleanup(cleanup: DispatchCleanup) {
     workspace_removed: cleanup.workspace_removed,
     branch_deleted: cleanup.branch_deleted,
     branch_delete_skipped_reason: cleanup.branch_delete_skipped_reason,
-    cleaned_at: cleanup.cleaned_at
+    cleaned_at: cleanup.cleaned_at,
+    audit_recovered: cleanup.audit_recovered,
+    audit_recovery_reason: cleanup.audit_recovery_reason
   };
 }
 
@@ -3058,6 +3062,7 @@ function renderDispatchMerge(result: DispatchMergeSuccess): string {
     `Previous HEAD: ${result.merge.previous_head}`,
     `New HEAD: ${result.merge.new_head}`,
     `Changed: ${result.merge.changed ? "yes" : "no"}`,
+    `Audit recovered: ${result.merge.audit_recovered ? "yes" : "no"}`,
     ""
   ].join("\n");
 }
@@ -3072,6 +3077,7 @@ function renderDispatchCleanup(result: DispatchCleanupSuccess): string {
     `Branch deleted: ${result.cleanup.branch_deleted ? "yes" : "no"}`,
     `Branch delete skipped: ${result.cleanup.branch_delete_skipped_reason ?? "no"}`,
     `Changed: ${result.cleanup.changed ? "yes" : "no"}`,
+    `Audit recovered: ${result.cleanup.audit_recovered ? "yes" : "no"}`,
     ""
   ].join("\n");
 }

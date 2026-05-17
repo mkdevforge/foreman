@@ -17,6 +17,7 @@ export interface CleanupDispatchRunOptions {
   force?: boolean;
   idGenerator?: IdGenerator;
   now?: NowGenerator;
+  beforeFinalEventWrite?: () => void;
 }
 
 export interface DispatchCleanup {
@@ -32,6 +33,8 @@ export interface DispatchCleanup {
   branch_deleted: boolean;
   branch_delete_skipped_reason: string | null;
   cleaned_at: string | null;
+  audit_recovered: boolean;
+  audit_recovery_reason: string | null;
 }
 
 export type CleanupDispatchRunResult =
@@ -80,8 +83,38 @@ export function cleanupDispatchRun(
   }
 
   if (inspected.kind === "not_inspectable") {
-    if (inspected.reason === "workspace_missing" && inspected.attempt !== null && hasCleanupEvent(inspected.detail, inspected.attempt.id)) {
+    if (inspected.reason === "workspace_missing" && inspected.attempt !== null) {
       const controlBranch = gitOutput(options.controlRepoRoot, ["branch", "--show-current"]) || null;
+      const cleanupEvent = findLatestAttemptEvent(inspected.detail, inspected.attempt.id, "cleaned_up");
+      const cleanupStartedEvent = findLatestAttemptEvent(inspected.detail, inspected.attempt.id, "cleanup_started");
+      const workspacePath = inspected.workspace_path ?? inspected.attempt.workspace_path ?? "";
+      const worktreeBranch = inspected.expected_branch ?? inspected.attempt.worktree_branch ?? "";
+
+      if (cleanupEvent === null && cleanupStartedEvent !== null) {
+        return recoverCleanupAudit(db, {
+          runId,
+          detail: inspected.detail,
+          attempt: inspected.attempt,
+          controlRepoRoot: options.controlRepoRoot,
+          controlBranch,
+          workspacePath,
+          worktreeBranch,
+          force: options.force ?? false,
+          startedEvent: cleanupStartedEvent,
+          now: options.now ?? defaultNow,
+          idGenerator: options.idGenerator ?? uuidv7
+        });
+      }
+
+      if (cleanupEvent === null) {
+        return {
+          kind: "not_cleanupable",
+          detail: inspected.detail,
+          attempt: inspected.attempt,
+          reason: `workspace_${inspected.reason}`
+        };
+      }
+
       return {
         kind: "already_cleaned",
         detail: inspected.detail,
@@ -91,14 +124,16 @@ export function cleanupDispatchRun(
           attempt_id: inspected.attempt.id,
           control_repo_root: options.controlRepoRoot,
           control_branch: controlBranch,
-          workspace_path: inspected.workspace_path ?? inspected.attempt.workspace_path ?? "",
-          worktree_branch: inspected.expected_branch ?? inspected.attempt.worktree_branch ?? "",
+          workspace_path: workspacePath,
+          worktree_branch: worktreeBranch,
           force: options.force ?? false,
           changed: false,
           workspace_removed: false,
           branch_deleted: false,
           branch_delete_skipped_reason: "already_cleaned",
-          cleaned_at: null
+          cleaned_at: null,
+          audit_recovered: false,
+          audit_recovery_reason: null
         }
       };
     }
@@ -142,11 +177,24 @@ export function cleanupDispatchRun(
   }
 
   const controlBranch = gitOutput(options.controlRepoRoot, ["branch", "--show-current"]) || null;
-  const timestamp = (options.now ?? defaultNow)();
+  const now = options.now ?? defaultNow;
+  const timestamp = now();
   const idGenerator = options.idGenerator ?? uuidv7;
+  const cleanupStartedEventId = insertCleanupStartedEvent(db, {
+    runId,
+    attemptId: inspected.attempt.id,
+    ts: timestamp,
+    idGenerator,
+    workspacePath: inspected.workspace.workspace_path,
+    worktreeBranch: inspected.workspace.expected_branch,
+    controlRepoRoot: options.controlRepoRoot,
+    controlBranch,
+    force: options.force ?? false
+  });
   const removeArgs = ["worktree", "remove", ...(options.force === true ? ["--force"] : []), inspected.workspace.workspace_path];
   runGitRequired(options.controlRepoRoot, removeArgs, "dispatch_cleanup_git_failed");
   const branchDelete = deleteBranchIfSafe(options.controlRepoRoot, inspected.workspace.expected_branch);
+  options.beforeFinalEventWrite?.();
   const eventId = `evt_${idGenerator()}`;
 
   const cleaned = db.transaction(() => {
@@ -166,7 +214,10 @@ export function cleanupDispatchRun(
         workspace_removed: true,
         branch_deleted: branchDelete.deleted,
         branch_delete_skipped_reason: branchDelete.skippedReason,
-        branch_delete_stderr: branchDelete.stderr
+        branch_delete_stderr: branchDelete.stderr,
+        cleanup_started_event_id: cleanupStartedEventId,
+        audit_recovered: false,
+        audit_recovery_reason: null
       })
     });
 
@@ -192,7 +243,9 @@ export function cleanupDispatchRun(
         workspace_removed: true,
         branch_deleted: branchDelete.deleted,
         branch_delete_skipped_reason: branchDelete.skippedReason,
-        cleaned_at: timestamp
+        cleaned_at: timestamp,
+        audit_recovered: false,
+        audit_recovery_reason: null
       }
     } satisfies CleanupDispatchRunResult;
   });
@@ -200,8 +253,127 @@ export function cleanupDispatchRun(
   return cleaned.immediate();
 }
 
-function hasCleanupEvent(detail: DispatchRunDetail, attemptId: string): boolean {
-  return detail.events.some((event) => event.type === "cleaned_up" && event.attempt_id === attemptId);
+function recoverCleanupAudit(
+  db: Database,
+  input: {
+    runId: string;
+    detail: DispatchRunDetail;
+    attempt: DispatchAttemptDetail;
+    controlRepoRoot: string;
+    controlBranch: string | null;
+    workspacePath: string;
+    worktreeBranch: string;
+    force: boolean;
+    startedEvent: DispatchRunDetail["events"][number];
+    now: NowGenerator;
+    idGenerator: IdGenerator;
+  }
+): Extract<CleanupDispatchRunResult, { kind: "already_cleaned" }> {
+  const timestamp = input.now();
+  const branchStillExists = branchExists(input.controlRepoRoot, input.worktreeBranch);
+  const branchDeleted = !branchStillExists;
+  const recoveryReason = "cleanup_event_missing_after_git_side_effect";
+  const eventId = `evt_${input.idGenerator()}`;
+  const branchDeleteSkippedReason = branchDeleted ? null : "branch_state_unknown_after_recovery";
+
+  insertDispatchEvent(db, {
+    id: eventId,
+    runId: input.runId,
+    attemptId: input.attempt.id,
+    ts: timestamp,
+    type: "cleaned_up",
+    message: "Recovered missing dispatch cleanup audit event after Git side effect was already applied.",
+    dataJson: JSON.stringify({
+      workspace_path: input.workspacePath,
+      worktree_branch: input.worktreeBranch,
+      control_repo_root: input.controlRepoRoot,
+      control_branch: input.controlBranch,
+      force: input.force,
+      workspace_removed: true,
+      branch_deleted: branchDeleted,
+      branch_delete_skipped_reason: branchDeleteSkippedReason,
+      branch_delete_stderr: null,
+      cleanup_started_event_id: input.startedEvent.id,
+      audit_recovered: true,
+      audit_recovery_reason: recoveryReason
+    })
+  });
+
+  const detail = getDispatchRunDetailById(db, input.runId);
+  if (detail === null) {
+    throw new Error(`recovered cleaned dispatch run '${input.runId}' could not be read back`);
+  }
+
+  return {
+    kind: "already_cleaned",
+    detail,
+    attempt: input.attempt,
+    cleanup: {
+      run_id: detail.run.id,
+      attempt_id: input.attempt.id,
+      control_repo_root: input.controlRepoRoot,
+      control_branch: input.controlBranch,
+      workspace_path: input.workspacePath,
+      worktree_branch: input.worktreeBranch,
+      force: input.force,
+      changed: false,
+      workspace_removed: true,
+      branch_deleted: branchDeleted,
+      branch_delete_skipped_reason: branchDeleteSkippedReason,
+      cleaned_at: timestamp,
+      audit_recovered: true,
+      audit_recovery_reason: recoveryReason
+    }
+  };
+}
+
+function insertCleanupStartedEvent(
+  db: Database,
+  input: {
+    runId: string;
+    attemptId: string;
+    ts: string;
+    idGenerator: IdGenerator;
+    workspacePath: string;
+    worktreeBranch: string;
+    controlRepoRoot: string;
+    controlBranch: string | null;
+    force: boolean;
+  }
+): string {
+  const eventId = `evt_${input.idGenerator()}`;
+  insertDispatchEvent(db, {
+    id: eventId,
+    runId: input.runId,
+    attemptId: input.attemptId,
+    ts: input.ts,
+    type: "cleanup_started",
+    message: "Started dispatch cleanup Git side effect.",
+    dataJson: JSON.stringify({
+      workspace_path: input.workspacePath,
+      worktree_branch: input.worktreeBranch,
+      control_repo_root: input.controlRepoRoot,
+      control_branch: input.controlBranch,
+      force: input.force
+    })
+  });
+
+  return eventId;
+}
+
+function findLatestAttemptEvent(
+  detail: DispatchRunDetail,
+  attemptId: string,
+  type: string
+): DispatchRunDetail["events"][number] | null {
+  for (let index = detail.events.length - 1; index >= 0; index -= 1) {
+    const event = detail.events[index];
+    if (event.attempt_id === attemptId && event.type === type) {
+      return event;
+    }
+  }
+
+  return null;
 }
 
 function isAncestor(cwd: string, ancestor: string, descendant: string): boolean {

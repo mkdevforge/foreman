@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse, stringify } from "yaml";
 import { openForemanDatabase } from "../src/db/client";
+import { mergeDispatchRun } from "../src/dispatch/merge";
 
 const repoRoot = fileURLToPath(new URL("../", import.meta.url));
 const foremanBin = join(repoRoot, "foreman");
@@ -51,6 +52,7 @@ describe("Phase 18a dispatch merge CLI", () => {
     expect(readFileSync(join(repo, "app.txt"), "utf8")).toBe("merged app\n");
     expect(readFileSync(join(repo, "feature.txt"), "utf8")).toBe("new feature\n");
     expect(gitOutput(repo, ["rev-parse", "HEAD"])).toBe(branchHead);
+    expect(eventTypes(homeDir, runId).filter((type) => type === "merge_started")).toHaveLength(1);
     expect(eventTypes(homeDir, runId).filter((type) => type === "merged")).toHaveLength(1);
 
     const again = JSON.parse(runForeman(repo, homeDir, ["dispatch", "merge", runId, "--json"]).stdout);
@@ -61,6 +63,63 @@ describe("Phase 18a dispatch merge CLI", () => {
       changed: false,
       merged_at: null
     });
+    expect(eventTypes(homeDir, runId).filter((type) => type === "merge_started")).toHaveLength(1);
+    expect(eventTypes(homeDir, runId).filter((type) => type === "merged")).toHaveLength(1);
+  });
+
+  test("recovers a missing merge audit event after the Git fast-forward already happened", () => {
+    const homeDir = createTempDir();
+    const repo = setupReadyRepo();
+    const runId = createClaimPrepareAndSucceed(repo, homeDir);
+    const workspace = expectedWorkspace(repo);
+
+    writeFileSync(join(workspace, "app.txt"), "recovered app\n", "utf8");
+    runGit(workspace, ["add", "."]);
+    runGit(workspace, ["commit", "-m", "Prepare recoverable merge"]);
+    const branchHead = gitOutput(workspace, ["rev-parse", "HEAD"]);
+
+    const db = openForemanDatabase({ homeDir });
+    try {
+      expect(() =>
+        mergeDispatchRun(db, runId, {
+          controlRepoRoot: repo,
+          repoName: "foreman",
+          beforeFinalEventWrite: () => {
+            throw new Error("simulated final event write failure");
+          }
+        })
+      ).toThrow("simulated final event write failure");
+    } finally {
+      db.close();
+    }
+
+    expect(gitOutput(repo, ["rev-parse", "HEAD"])).toBe(branchHead);
+    expect(readFileSync(join(repo, "app.txt"), "utf8")).toBe("recovered app\n");
+    expect(eventTypes(homeDir, runId).filter((type) => type === "merge_started")).toHaveLength(1);
+    expect(eventTypes(homeDir, runId).filter((type) => type === "merged")).toHaveLength(0);
+
+    const recovered = JSON.parse(runForeman(repo, homeDir, ["dispatch", "merge", runId, "--json"]).stdout);
+    expect(recovered.changed).toBe(true);
+    expect(recovered.merge).toMatchObject({
+      run_id: runId,
+      changed: false,
+      fast_forward: true,
+      audit_recovered: true,
+      audit_recovery_reason: "merge_event_missing_after_git_side_effect"
+    });
+    expect(gitOutput(repo, ["rev-parse", "HEAD"])).toBe(branchHead);
+
+    const events = eventRows(homeDir, runId);
+    expect(events.filter((event) => event.type === "merge_started")).toHaveLength(1);
+    expect(events.filter((event) => event.type === "merged")).toHaveLength(1);
+    expect(JSON.parse(events.find((event) => event.type === "merged")!.data_json)).toMatchObject({
+      audit_recovered: true,
+      audit_recovery_reason: "merge_event_missing_after_git_side_effect"
+    });
+
+    const again = JSON.parse(runForeman(repo, homeDir, ["dispatch", "merge", runId, "--json"]).stdout);
+    expect(again.changed).toBe(false);
+    expect(again.merge.audit_recovered).toBe(false);
     expect(eventTypes(homeDir, runId).filter((type) => type === "merged")).toHaveLength(1);
   });
 
@@ -208,13 +267,18 @@ function markDispatchSucceeded(homeDir: string, runId: string): void {
 }
 
 function eventTypes(homeDir: string, runId: string): string[] {
+  return eventRows(homeDir, runId).map((row) => row.type);
+}
+
+function eventRows(homeDir: string, runId: string): { type: string; data_json: string }[] {
   const db = openForemanDatabase({ homeDir });
 
   try {
     return db
-      .query<{ type: string }, [string]>("SELECT type FROM dispatch_events WHERE run_id = ? ORDER BY ts ASC, id ASC")
-      .all(runId)
-      .map((row) => row.type);
+      .query<{ type: string; data_json: string }, [string]>(
+        "SELECT type, data_json FROM dispatch_events WHERE run_id = ? ORDER BY ts ASC, id ASC"
+      )
+      .all(runId);
   } finally {
     db.close();
   }
