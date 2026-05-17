@@ -1,0 +1,122 @@
+schema_version: 1
+id: FOREMAN-22
+title: Local UI foundation
+source_ref: docs/dispatch-run-model.md#ui-contract
+description: Build the first read-only local Foreman UI on top of existing CLI JSON contracts.
+status: todo
+created_at: 2026-05-17T23:38:18.700Z
+updated_at: 2026-05-17T23:39:05.319Z
+chunks:
+  - id: ui-readonly-server
+    title: Read-only UI server
+    spec: |
+      Add the smallest local server foundation for a read-only Foreman UI.
+
+      Scope:
+      - Add `foreman ui [--host <host>] [--port <port>]`.
+      - Serve a local web UI from the current Foreman checkout.
+      - Use Bun because the project already depends on Bun; do not introduce Electron, Avalonia,
+        a TUI framework, or a separate daemon.
+      - Add a small HTTP JSON bridge that shells out to allowlisted read-only Foreman CLI commands
+        with `--json`.
+      - Initial allowlist:
+        - `task list --json`
+        - `task show <id> --json`
+        - `chunk list <task> --json`
+        - `chunk ready <task>/<chunk> --json`
+        - `review task <task> --json`
+        - `review chunk <task>/<chunk> --json`
+        - `dispatch list --json`
+        - `dispatch show <run-id-or-prefix> --json`
+        - `session list --json`
+        - `session show <session-id-or-prefix> --json`
+        - `session cost --json`
+      - Resolve the UI's working directory to the Git root where `foreman ui` is launched.
+      - Preserve the existing CLI as the source of behavior; do not query SQLite directly from UI
+        endpoints in this slice.
+      - Return stable endpoint errors with command, exit code, stderr JSON when available, and
+        plain stderr fallback.
+      - Add tests for allowlist enforcement, successful proxying, command error mapping, port
+        selection, and clean shutdown.
+      - Keep the first server read-only. No task, chunk, dispatch, session, hook, Git, or config
+        mutations in this chunk.
+
+      Expected outcome:
+      - `foreman ui` starts a local read-only HTTP server backed by existing CLI JSON contracts.
+      - The future browser UI has a tested data bridge without depending on Foreman's private
+        TypeScript internals or local SQLite schema.
+      - A future UI can be embedded, replaced, or split out without changing the CLI contract.
+    status: todo
+    stage: plan
+    created_at: 2026-05-17T23:38:18.754Z
+    updated_at: 2026-05-17T23:39:05.319Z
+    notes: []
+    decisions:
+      - id: d_019e384e-bee7-77fc-943e-524ac04daca7
+        body: Initial UI foundation is a local Bun-served web app with an allowlisted read-only CLI JSON
+          bridge; do not query SQLite directly or introduce a daemon in the first slice.
+        decided_at: 2026-05-17T23:39:05.319Z
+  - id: ui-overview-screen
+    title: Overview dashboard
+    spec: |
+      Build the first usable read-only overview screen on top of the UI server.
+
+      Scope:
+      - Render the app as the first screen; do not build a marketing or landing page.
+      - Show shared repo context separately from local execution state:
+        - tasks and chunks from YAML-backed CLI output
+        - readiness/blocker state from `chunk ready`
+        - dispatch runs, attempts, and latest events from SQLite-backed CLI output
+        - session/cost summaries from existing session and review commands
+      - Use a dense operational layout suitable for repeated work: sidebar/list navigation,
+        compact status chips, sortable/filterable tables, and predictable scan order.
+      - Include filters for task, chunk status/stage, readiness state, dispatch status, and tool.
+      - Poll or manually refresh by re-calling read-only endpoints; no live daemon or websocket
+        requirement in this chunk.
+      - Add loading, empty, command-error, stale-data, and malformed-response states.
+      - Add frontend tests around rendering states using fixture endpoint responses.
+      - Use Playwright or equivalent browser smoke coverage if a dev server is required.
+      - Do not add write actions, background dispatch, task mutation, question answering, decision
+        creation, merge, cleanup, reconcile, or hook installation controls in this chunk.
+
+      Expected outcome:
+      - A human can open the local UI and understand what work exists, what is blocked, what is
+        running, and what needs review without running multiple CLI commands.
+      - The UI respects the repo-vs-local-state boundary documented in `docs/dispatch-run-model.md`.
+    status: todo
+    stage: plan
+    created_at: 2026-05-17T23:38:18.803Z
+    updated_at: 2026-05-17T23:39:05.187Z
+    notes: []
+  - id: ui-detail-views
+    title: Detail views
+    spec: |
+      Add read-only task, chunk, dispatch run, and session detail views.
+
+      Scope:
+      - Add a task detail view with chunks, questions, decisions, readiness, linked sessions, and
+        dispatch runs for that task.
+      - Add a chunk detail view with spec, stage/status, open questions, accepted decisions,
+        readiness blockers, review data, linked sessions, and cost summaries.
+      - Add a dispatch run detail view with run fields, attempts, event timeline, session attachment,
+        workspace path, branch, process metadata, terminal status, and recovery/audit events.
+      - Add a session detail view that reuses existing session JSON and keeps full IDs visible at
+        least once per object.
+      - Include links between related objects: task -> chunk -> runs -> attempts -> sessions.
+      - Prefer existing CLI JSON responses. Add only narrowly-scoped read-only CLI output fields if
+        a detail view cannot be built without scraping text.
+      - Add fixture-backed frontend tests and at least one browser smoke test that verifies the
+        routes render without overlapping content at desktop and mobile widths.
+      - Document how to run the UI locally and what is intentionally read-only.
+      - Do not implement write flows, auth, remote hosting, tracker integrations, push/pull,
+        vector search, or autonomous scheduling in this chunk.
+
+      Expected outcome:
+      - The local UI can replace the common read-only inspection workflow for tasks, chunks,
+        dispatch runs, attempts, sessions, costs, and audit timelines.
+      - Remaining write flows are explicit future work instead of hidden half-controls.
+    status: todo
+    stage: plan
+    created_at: 2026-05-17T23:38:18.851Z
+    updated_at: 2026-05-17T23:39:05.252Z
+    notes: []
