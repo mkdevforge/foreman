@@ -275,6 +275,8 @@ function recoverCleanupAudit(
   const recoveryReason = "cleanup_event_missing_after_git_side_effect";
   const eventId = `evt_${input.idGenerator()}`;
   const branchDeleteSkippedReason = branchDeleted ? null : "branch_state_unknown_after_recovery";
+  const startedData = parseEventData(input.startedEvent);
+  const originalForce = booleanFromEventData(startedData, "force") ?? input.force;
 
   insertDispatchEvent(db, {
     id: eventId,
@@ -288,7 +290,7 @@ function recoverCleanupAudit(
       worktree_branch: input.worktreeBranch,
       control_repo_root: input.controlRepoRoot,
       control_branch: input.controlBranch,
-      force: input.force,
+      force: originalForce,
       workspace_removed: true,
       branch_deleted: branchDeleted,
       branch_delete_skipped_reason: branchDeleteSkippedReason,
@@ -315,7 +317,7 @@ function recoverCleanupAudit(
       control_branch: input.controlBranch,
       workspace_path: input.workspacePath,
       worktree_branch: input.worktreeBranch,
-      force: input.force,
+      force: originalForce,
       changed: false,
       workspace_removed: true,
       branch_deleted: branchDeleted,
@@ -374,6 +376,20 @@ function findLatestAttemptEvent(
   }
 
   return null;
+}
+
+function parseEventData(event: DispatchRunDetail["events"][number]): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(event.data_json) as unknown;
+    return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function booleanFromEventData(data: Record<string, unknown>, key: string): boolean | null {
+  const value = data[key];
+  return typeof value === "boolean" ? value : null;
 }
 
 function isAncestor(cwd: string, ancestor: string, descendant: string): boolean {

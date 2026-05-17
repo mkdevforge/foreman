@@ -123,6 +123,61 @@ describe("Phase 19a dispatch cleanup CLI", () => {
     expect(eventTypes(homeDir, runId).filter((type) => type === "cleaned_up")).toHaveLength(1);
   });
 
+  test("recovers forced cleanup audit with the original force flag after an unforced rerun", () => {
+    const homeDir = createTempDir();
+    const repo = setupReadyRepo();
+    const runId = createClaimPrepareAndSucceed(repo, homeDir);
+    const workspace = expectedWorkspace(repo);
+
+    writeFileSync(join(workspace, "app.txt"), "forced recover cleanup app\n", "utf8");
+    runGit(workspace, ["add", "."]);
+    runGit(workspace, ["commit", "-m", "Leave branch unmerged for forced cleanup recovery"]);
+
+    const db = openForemanDatabase({ homeDir });
+    try {
+      expect(() =>
+        cleanupDispatchRun(db, runId, {
+          controlRepoRoot: repo,
+          repoName: "foreman",
+          force: true,
+          beforeFinalEventWrite: () => {
+            throw new Error("simulated final event write failure");
+          }
+        })
+      ).toThrow("simulated final event write failure");
+    } finally {
+      db.close();
+    }
+
+    expect(existsSync(workspace)).toBe(false);
+    expect(branchExists(repo, "foreman/FOREMAN-19")).toBe(true);
+    expect(eventTypes(homeDir, runId).filter((type) => type === "cleanup_started")).toHaveLength(1);
+    expect(eventTypes(homeDir, runId).filter((type) => type === "cleaned_up")).toHaveLength(0);
+
+    const recovered = JSON.parse(runForeman(repo, homeDir, ["dispatch", "cleanup", runId, "--json"]).stdout);
+    expect(recovered.changed).toBe(true);
+    expect(recovered.cleanup).toMatchObject({
+      run_id: runId,
+      force: true,
+      changed: false,
+      workspace_removed: true,
+      branch_deleted: false,
+      branch_delete_skipped_reason: "branch_state_unknown_after_recovery",
+      audit_recovered: true,
+      audit_recovery_reason: "cleanup_event_missing_after_git_side_effect"
+    });
+
+    const events = eventRows(homeDir, runId);
+    const startedEventData = JSON.parse(events.find((event) => event.type === "cleanup_started")!.data_json);
+    const recoveredEventData = JSON.parse(events.find((event) => event.type === "cleaned_up")!.data_json);
+    expect(startedEventData.force).toBe(true);
+    expect(recoveredEventData).toMatchObject({
+      force: true,
+      audit_recovered: true,
+      audit_recovery_reason: "cleanup_event_missing_after_git_side_effect"
+    });
+  });
+
   test("rejects unmerged succeeded work unless cleanup is forced", () => {
     const homeDir = createTempDir();
     const repo = setupReadyRepo();
