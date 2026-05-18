@@ -135,7 +135,7 @@ async function handleUiRequest(
     });
   }
 
-  const endpoint = await resolveUiEndpoint(request, route);
+  const endpoint = await resolveUiEndpoint(request, url, route);
   if (endpoint instanceof Response) {
     return endpoint;
   }
@@ -158,12 +158,17 @@ async function handleUiRequest(
   }
 }
 
-async function resolveUiEndpoint(request: Request, route: UiRoute): Promise<UiEndpoint | Response> {
+async function resolveUiEndpoint(request: Request, url: URL, route: UiRoute): Promise<UiEndpoint | Response> {
   if (request.method === "GET" && route.methods.GET !== undefined) {
     return route.methods.GET();
   }
 
   if (request.method === "POST" && route.methods.POST !== undefined) {
+    const unsafeWrite = validateUiWriteRequest(request, url);
+    if (unsafeWrite !== null) {
+      return unsafeWrite;
+    }
+
     const body = await readUiJsonBody(request);
     if (body instanceof Response) {
       return body;
@@ -290,6 +295,33 @@ function stringFieldCommand(
   }
 
   return { argv: buildArgv(value) };
+}
+
+function validateUiWriteRequest(request: Request, url: URL): Response | null {
+  const origin = request.headers.get("origin");
+  if (origin !== null && origin !== url.origin) {
+    return jsonError(403, "ui_cross_origin_request", "Foreman UI write endpoints require same-origin requests.", 2, {
+      origin,
+      expected_origin: url.origin
+    });
+  }
+
+  const secFetchSite = request.headers.get("sec-fetch-site")?.toLowerCase();
+  if (secFetchSite !== undefined && secFetchSite !== "same-origin" && secFetchSite !== "none") {
+    return jsonError(403, "ui_cross_origin_request", "Foreman UI write endpoints require same-origin requests.", 2, {
+      sec_fetch_site: secFetchSite,
+      expected_sec_fetch_site: ["same-origin", "none"]
+    });
+  }
+
+  const contentType = request.headers.get("content-type") ?? "";
+  if (contentType.split(";")[0]?.trim().toLowerCase() !== "application/json") {
+    return jsonError(415, "ui_unsupported_media_type", "Foreman UI write endpoints require application/json request bodies.", 2, {
+      content_type: contentType
+    });
+  }
+
+  return null;
 }
 
 async function readUiJsonBody(request: Request): Promise<Record<string, unknown> | Response> {

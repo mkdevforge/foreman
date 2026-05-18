@@ -5,7 +5,7 @@ source_ref: docs/backlog/future-dispatch-human-gates.md#ui-direction
 description: Add narrow local UI mutation flows on top of existing Foreman CLI JSON contracts.
 status: doing
 created_at: 2026-05-18T14:26:55.569Z
-updated_at: 2026-05-18T14:32:05.885Z
+updated_at: 2026-05-18T14:42:59.150Z
 chunks:
   - id: ui-write-bridge
     title: UI write bridge
@@ -50,13 +50,19 @@ chunks:
     status: review
     stage: implement
     created_at: 2026-05-18T14:26:55.630Z
-    updated_at: 2026-05-18T14:32:05.885Z
+    updated_at: 2026-05-18T14:42:59.150Z
     notes:
       - ts: 2026-05-18T14:32:05.828Z
         body: Implemented the local UI write bridge as explicit POST routes backed by allowlisted existing
           CLI JSON commands for chunk status/stage/notes, question add/answer, and decision add.
           Added request-body validation, method handling, command failure/invalid-JSON tests, and
           README documentation. Verified build, focused UI server tests, and full suite.
+      - ts: 2026-05-18T14:42:59.150Z
+        body: "Addressed review finding: UI POST write routes now reject cross-origin browser requests via
+          Origin/Sec-Fetch-Site checks before body parsing, require application/json request bodies,
+          and document that write bridge constraint. Added focused coverage for same-origin
+          acceptance, cross-origin rejection, and non-JSON rejection. Verified build, focused UI
+          tests, and full suite with increased per-test timeout after default timeout-only flake."
   - id: ui-basic-controls
     title: Basic UI task controls
     spec: >

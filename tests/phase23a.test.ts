@@ -122,6 +122,61 @@ describe("Phase 23a UI write bridge", () => {
     expect(calls).toEqual([]);
   });
 
+  test("rejects cross-origin and non-JSON write requests before running commands", async () => {
+    const repoRoot = createTempDir();
+    const calls: UiCommandRunnerInput[] = [];
+    const server = startTestServer(repoRoot, async (input) => {
+      calls.push(input);
+      return jsonResult({ schema_version: 1, ok: true });
+    });
+
+    const sameOrigin = await fetchJson(
+      server,
+      "/api/chunks/FOREMAN-23/ui-write-bridge/status",
+      jsonPost({ status: "review" }, { origin: new URL(server.url).origin, "sec-fetch-site": "same-origin" })
+    );
+    const crossOrigin = await fetchJson(server, "/api/chunks/FOREMAN-23/ui-write-bridge/stage", {
+      method: "POST",
+      headers: {
+        "content-type": "text/plain",
+        origin: "https://example.invalid",
+        "sec-fetch-site": "cross-site"
+      },
+      body: JSON.stringify({ stage: "implement" })
+    });
+    const nonJson = await fetchJson(
+      server,
+      "/api/chunks/FOREMAN-23/ui-write-bridge/notes",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "text/plain",
+          origin: new URL(server.url).origin,
+          "sec-fetch-site": "same-origin"
+        },
+        body: JSON.stringify({ body: "Note." })
+      }
+    );
+
+    expect(sameOrigin.status).toBe(200);
+    expect(crossOrigin.status).toBe(403);
+    expect(crossOrigin.body.error).toMatchObject({
+      code: "ui_cross_origin_request",
+      details: { origin: "https://example.invalid", expected_origin: new URL(server.url).origin }
+    });
+    expect(nonJson.status).toBe(415);
+    expect(nonJson.body.error).toMatchObject({
+      code: "ui_unsupported_media_type",
+      details: { content_type: "text/plain" }
+    });
+    expect(calls).toEqual([
+      {
+        argv: ["chunk", "status", "FOREMAN-23/ui-write-bridge", "review", "--json"],
+        cwd: repoRoot
+      }
+    ]);
+  });
+
   test("maps write command failures and invalid JSON responses", async () => {
     const server = startTestServer(createTempDir(), async (input) => {
       if (input.argv[1] === "status") {
@@ -180,10 +235,10 @@ function jsonResult(value: unknown) {
   };
 }
 
-function jsonPost(value: unknown): RequestInit {
+function jsonPost(value: unknown, headers?: Record<string, string>): RequestInit {
   return {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...headers },
     body: JSON.stringify(value)
   };
 }
