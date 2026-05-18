@@ -36,9 +36,18 @@ test("renders overview data and filters without screenshot baselines", async ({ 
   await expect(page.locator("#metric-tasks")).toHaveText("2");
   await expect(page.locator("#metric-open-chunks")).toHaveText("2");
   await expect(page.locator("#metric-ready-chunks")).toHaveText("1");
-  await expect(page.locator("#metric-ready-note")).toHaveText("1 need attention");
+  await expect(page.locator("#rail-dispatch-ready")).toHaveText("1");
+  await expect(page.locator("#metric-ready-note")).toHaveText("1 open chunk not dispatchable");
   await expect(page.locator("#chunk-rows")).toContainText("TASK-1/ready-chunk");
   await expect(page.locator("#chunk-rows")).toContainText("TASK-1/blocked-chunk");
+  await expect(page.locator("#chunk-rows")).toContainText("task todo");
+  await expect(page.locator("#chunk-rows")).toContainText("chunk todo");
+  await expect(page.locator("#chunk-rows")).toContainText("stage implement");
+  await expect(page.locator("#chunk-rows")).toContainText("dispatchable");
+  await expect(page.locator("#chunk-rows")).toContainText("not dispatchable");
+  await expect(page.locator("#chunk-rows")).toContainText("not applicable");
+  await expect(page.locator("#chunk-rows")).not.toContainText("add dispatch readiness metadata");
+  await expect(page.locator("#chunk-rows")).not.toContainText("chunk is already done");
   await expect(page.locator("#dispatch-rows")).toContainText("TASK-1/blocked-chunk");
   await expect(page.locator("#session-rows")).toContainText("TASK-1/ready-chunk");
 

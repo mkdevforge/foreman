@@ -324,12 +324,12 @@ function render() {
   const totalCost = Number(cost.overall?.total_cost_usd || 0);
   const openChunks = chunks.filter((chunk) => chunk.status !== "done");
   const readyDispatchChunks = openChunks.filter((chunk) => getReadinessState(chunk) === "ready");
-  const needsAttentionChunks = openChunks.filter((chunk) => getReadinessState(chunk) === "blocked");
+  const notDispatchableChunks = openChunks.filter((chunk) => getReadinessState(chunk) !== "ready");
   const failures = Object.keys(state.errors);
 
   setText("rail-tasks", String(tasks.length));
   setText("rail-open-chunks", String(openChunks.length));
-  setText("rail-needs-attention", String(needsAttentionChunks.length));
+  setText("rail-dispatch-ready", String(readyDispatchChunks.length));
   setText("rail-dispatch", String(dispatchRuns.length));
   setText("rail-sessions", String(sessions.length));
   setText("rail-cost", money(totalCost));
@@ -339,7 +339,7 @@ function render() {
   setText("metric-open-chunks", String(openChunks.length));
   setText("metric-open-note", chunks.length + " total chunks");
   setText("metric-ready-chunks", String(readyDispatchChunks.length));
-  setText("metric-ready-note", state.readinessLoading ? "Checking readiness" : dispatchReadinessNote(openChunks, needsAttentionChunks));
+  setText("metric-ready-note", state.readinessLoading ? "Checking dispatch gates" : dispatchReadinessNote(openChunks, notDispatchableChunks));
   setText("metric-dispatch", String(dispatchRuns.length));
   setText("metric-dispatch-note", dispatchRuns.length === 0 ? "No active runs" : countByStatus(dispatchRuns));
   setText("metric-sessions", String(sessions.length));
@@ -377,19 +377,33 @@ function renderChunks(chunks) {
 
   return chunks.map((chunk) => {
     const readiness = getReadiness(chunk);
-    const blockers = readiness.blockers.map((blocker) => blocker.message || blocker.code).filter(Boolean);
     const description = chunk.spec ? firstLine(chunk.spec) : chunk.title || "";
     return "<tr>" +
       "<td>" +
         "<div class=\"item-title\"><a class=\"item-id detail-link\" href=\"" + routeHref(["chunk", chunk.task.id, chunk.id]) + "\">" + esc(chunk.task.id + "/" + chunk.id) + "</a><span>" + esc(chunk.title || "Untitled chunk") + "</span></div>" +
         "<p class=\"item-copy\">" + esc(description) + "</p>" +
-        (blockers.length > 0 ? "<p class=\"item-copy\">" + esc(blockers.slice(0, 2).join("; ")) + "</p>" : "") +
       "</td>" +
-      "<td><div class=\"meta-line\">" + chip(chunk.task.status || "unknown", chunk.task.status) + chip(chunk.status || "unknown", chunk.status) + chip(chunk.stage || "stage unset", chunk.stage) + "</div></td>" +
-      "<td>" + readinessChip(readiness) + "</td>" +
+      "<td>" + renderWorkStateCell(chunk) + "</td>" +
+      "<td>" + renderDispatchGateCell(chunk, readiness) + "</td>" +
       "<td class=\"mono\">" + esc(formatDate(chunk.updated_at || chunk.created_at)) + "</td>" +
     "</tr>";
   }).join("");
+}
+
+function renderWorkStateCell(chunk) {
+  return "<div class=\"meta-line\">" +
+    chip("task " + (chunk.task.status || "unknown"), chunk.task.status) +
+    chip("chunk " + (chunk.status || "unknown"), chunk.status) +
+    chip("stage " + (chunk.stage || "unset"), chunk.stage) +
+  "</div>";
+}
+
+function renderDispatchGateCell(chunk, readiness) {
+  const summary = dispatchGateSummary(chunk, readiness);
+  return "<div class=\"dispatch-gate-cell\">" +
+    "<div class=\"meta-line\">" + chip(summary.label, summary.tone) + "</div>" +
+    (summary.note ? "<p class=\"item-copy\">" + esc(summary.note) + "</p>" : "") +
+  "</div>";
 }
 
 function renderDispatchRuns(dispatchRuns) {
@@ -916,7 +930,7 @@ function renderChunkDetail(data) {
   return detailHeader(
     "Chunk",
     ref + " - " + (data.chunk.title || "Untitled chunk"),
-    chip(data.chunk.status || "unknown", data.chunk.status) + chip(data.chunk.stage || "stage unset", data.chunk.stage) + readinessChip(data.readiness),
+    chip("chunk " + (data.chunk.status || "unknown"), data.chunk.status) + chip("stage " + (data.chunk.stage || "unset"), data.chunk.stage) + dispatchGateChip(data.chunk, data.readiness),
     linkToTask(data.task.id, data.task.title || data.task.id)
   ) +
     detailWriteBanner() +
@@ -931,7 +945,7 @@ function renderChunkDetail(data) {
       detailPanel("Controls", "", renderChunkControls(data.task.id, data.chunk), "detail-panel-wide") +
       detailPanel("Dispatch Start", "", renderDispatchStartControls(data.task.id, data.chunk, data.readiness), "detail-panel-wide") +
       detailPanel("Spec", "", preBlock(data.chunk.spec || "No spec."), "detail-panel-wide") +
-      detailPanel("Readiness", blockers.length + " blockers", renderReadinessDetail(data.readiness, blockers, warnings)) +
+      detailPanel("Dispatch Gate", dispatchGateDetailMeta(data.chunk, data.readiness, blockers), renderDispatchGateDetail(data.chunk, data.readiness, blockers, warnings)) +
       detailPanel("Open Questions", String(array(data.questions).filter((question) => question.status === "open").length), renderQuestionList(data.questions, data.task.id, data.chunk.id)) +
       detailPanel("Accepted Decisions", String(array(data.decisions).length), renderDecisionList(data.decisions)) +
       detailPanel("Linked Sessions", String(linkedEntries.length), renderLinkedSessionEntries(linkedEntries)) +
@@ -1314,15 +1328,15 @@ function renderTaskChunkTable(task, chunks, extras, review) {
     return panelState("No chunks found.");
   }
 
-  return "<div class=\"table-scroll\"><table class=\"data-table detail-table\"><thead><tr><th>Chunk</th><th>Status</th><th>Readiness</th><th>Questions</th><th>Decisions</th><th>Sessions</th><th>Cost</th></tr></thead><tbody>" +
+  return "<div class=\"table-scroll\"><table class=\"data-table detail-table\"><thead><tr><th>Chunk</th><th>Work state</th><th>Dispatch gate</th><th>Questions</th><th>Decisions</th><th>Sessions</th><th>Cost</th></tr></thead><tbody>" +
     chunks.map((chunk) => {
       const extra = extras.get(chunk.id) || { readiness: { state: "unknown", message: "Unknown", blockers: [] }, questions: [], decisions: [] };
       const rollup = taskReviewRollup(review, chunk.id);
       const openQuestions = array(extra.questions).filter((question) => question.status === "open").length;
       return "<tr>" +
         "<td><div class=\"item-title\">" + linkToChunk(task.id, chunk.id, task.id + "/" + chunk.id) + "<span>" + esc(chunk.title || "Untitled chunk") + "</span></div></td>" +
-        "<td><div class=\"meta-line\">" + chip(chunk.status || "unknown", chunk.status) + chip(chunk.stage || "stage unset", chunk.stage) + "</div>" + renderChunkStateControls(task.id, chunk, true) + "</td>" +
-        "<td>" + readinessChip(extra.readiness) + "</td>" +
+        "<td><div class=\"meta-line\">" + chip("chunk " + (chunk.status || "unknown"), chunk.status) + chip("stage " + (chunk.stage || "unset"), chunk.stage) + "</div>" + renderChunkStateControls(task.id, chunk, true) + "</td>" +
+        "<td>" + renderDispatchGateCell({ ...chunk, task }, extra.readiness) + "</td>" +
         "<td class=\"mono\">" + esc(openQuestions + " open / " + array(extra.questions).length + " total") + "</td>" +
         "<td class=\"mono\">" + esc(array(extra.decisions).length) + "</td>" +
         "<td class=\"mono\">" + esc(rollup?.linked_session_count ?? 0) + "</td>" +
@@ -1420,12 +1434,20 @@ function renderDecisionList(decisions) {
   ).join("");
 }
 
-function renderReadinessDetail(readiness, blockers, warnings) {
+function renderDispatchGateDetail(chunk, readiness, blockers, warnings) {
+  const summary = dispatchGateSummary(chunk, readiness);
+  if (chunk.status === "done") {
+    return "<div class=\"detail-copy\">" +
+      "<div class=\"chips\">" + chip(summary.label, summary.tone) + "</div>" +
+      "<p class=\"item-copy\">" + esc(summary.note) + "</p>" +
+    "</div>";
+  }
+
   const blockerRows = blockers.map((blocker) => "<li><span class=\"item-id\">" + esc(blocker.code || "blocker") + "</span> " + esc(blocker.message || "") + "</li>");
   const warningRows = warnings.map((warning) => "<li><span class=\"item-id\">" + esc(warning.code || "warning") + "</span> " + esc(warning.message || "") + "</li>");
   return "<div class=\"detail-copy\">" +
-    "<div class=\"chips\">" + readinessChip(readiness) + "</div>" +
-    (blockerRows.length === 0 ? "<p class=\"item-copy\">No blockers.</p>" : "<ul class=\"detail-list\">" + blockerRows.join("") + "</ul>") +
+    "<div class=\"chips\">" + chip(summary.label, summary.tone) + "</div>" +
+    (blockerRows.length === 0 ? "<p class=\"item-copy\">No dispatch gate requirements are blocking launch.</p>" : "<ul class=\"detail-list\">" + blockerRows.join("") + "</ul>") +
     (warningRows.length === 0 ? "" : "<p class=\"detail-subtitle\">Warnings</p><ul class=\"detail-list\">" + warningRows.join("") + "</ul>") +
   "</div>";
 }
@@ -1955,20 +1977,20 @@ function readinessFromPayload(payload) {
   const blockers = array(payload.blockers);
   return {
     state: payload.ready ? "ready" : "blocked",
-    message: payload.ready ? "Ready" : blockers.length + " blocker" + (blockers.length === 1 ? "" : "s"),
+    message: payload.ready ? "Dispatchable" : "Not dispatchable",
     blockers
   };
 }
 
 function readinessChip(readiness) {
   if (readiness.state === "ready") {
-    return chip("ready", "done");
+    return chip("dispatchable", "done");
   }
   if (readiness.state === "blocked") {
-    return chip(readiness.message || "blocked", "failed");
+    return chip(readiness.message || "not dispatchable", "failed");
   }
   if (readiness.state === "error") {
-    return chip("readiness error", "failed");
+    return chip("dispatch gate error", "failed");
   }
   if (readiness.state === "checking") {
     return chip("checking", "warn");
@@ -1976,11 +1998,85 @@ function readinessChip(readiness) {
   return chip("unknown", "muted");
 }
 
-function dispatchReadinessNote(openChunks, needsAttentionChunks) {
+function dispatchReadinessNote(openChunks, notDispatchableChunks) {
   if (openChunks.length === 0) {
     return "No open chunks";
   }
-  return needsAttentionChunks.length + " need attention";
+  if (notDispatchableChunks.length === 0) {
+    return "All open chunks are dispatchable";
+  }
+  return notDispatchableChunks.length + " open chunk" + (notDispatchableChunks.length === 1 ? "" : "s") + " not dispatchable";
+}
+
+function dispatchGateChip(chunk, readiness) {
+  const summary = dispatchGateSummary(chunk, readiness);
+  return chip(summary.label, summary.tone);
+}
+
+function dispatchGateDetailMeta(chunk, readiness, blockers) {
+  if (chunk.status === "done") {
+    return "not applicable";
+  }
+  if (readiness.state === "ready") {
+    return "dispatchable";
+  }
+  if (readiness.state === "checking") {
+    return "checking";
+  }
+  if (readiness.state === "unknown") {
+    return "unknown";
+  }
+  if (readiness.state === "error") {
+    return "error";
+  }
+  return blockers.length + " unmet requirement" + (blockers.length === 1 ? "" : "s");
+}
+
+function dispatchGateSummary(chunk, readiness) {
+  if (chunk.status === "done") {
+    return {
+      label: "not applicable",
+      tone: "muted",
+      note: "Chunk is done."
+    };
+  }
+
+  if (readiness.state === "ready") {
+    return {
+      label: "dispatchable",
+      tone: "done",
+      note: "Ready for agent launch."
+    };
+  }
+
+  if (readiness.state === "checking") {
+    return { label: "checking", tone: "warn", note: "" };
+  }
+
+  if (readiness.state === "error") {
+    return { label: "gate error", tone: "failed", note: readiness.message || "Dispatch gate check failed." };
+  }
+
+  if (readiness.state === "unknown") {
+    return { label: "unknown", tone: "muted", note: "" };
+  }
+
+  const blockers = array(readiness.blockers);
+  const actionable = blockers.filter((blocker) => blocker.code !== "missing_dispatch_metadata");
+  if (actionable.length === 0 && blockers.some((blocker) => blocker.code === "missing_dispatch_metadata")) {
+    return {
+      label: "not configured",
+      tone: "warn",
+      note: "Dispatch gate metadata is missing."
+    };
+  }
+
+  const first = actionable[0] || blockers[0];
+  return {
+    label: "not dispatchable",
+    tone: "failed",
+    note: first?.message || "Dispatch gate has unmet requirements."
+  };
 }
 
 function chunkKey(chunk) {

@@ -27,7 +27,7 @@
         <ul class="rail-list">
           <li><span>Tasks</span><strong id="rail-tasks">0</strong></li>
           <li><span>Open chunks</span><strong id="rail-open-chunks">0</strong></li>
-          <li><span>Needs attention</span><strong id="rail-needs-attention">0</strong></li>
+          <li><span>Dispatch-ready</span><strong id="rail-dispatch-ready">0</strong></li>
           <li><span>Dispatch runs</span><strong id="rail-dispatch">0</strong></li>
           <li><span>Sessions</span><strong id="rail-sessions">0</strong></li>
           <li><span>Estimated cost</span><strong id="rail-cost">$0.00</strong></li>
@@ -48,7 +48,7 @@
             <div class="metric-note" id="metric-open-note"></div>
           </article>
           <article class="metric-card">
-            <div class="metric-label">Ready To Dispatch</div>
+            <div class="metric-label">Dispatch-Ready</div>
             <div class="metric-value" id="metric-ready-chunks">0</div>
             <div class="metric-note" id="metric-ready-note"></div>
           </article>
@@ -90,11 +90,11 @@
                 <select class="select-control" id="filter-stage"></select>
               </label>
               <label class="field">
-                <span>Readiness</span>
+                <span>Dispatch gate</span>
                 <select class="select-control" id="filter-readiness">
-                  <option value="all">All readiness</option>
-                  <option value="ready">Ready</option>
-                  <option value="blocked">Blocked</option>
+                  <option value="all">All dispatch gates</option>
+                  <option value="ready">Dispatchable</option>
+                  <option value="blocked">Not dispatchable</option>
                   <option value="checking">Checking</option>
                   <option value="error">Error</option>
                 </select>
@@ -128,8 +128,8 @@
                   <thead>
                     <tr>
                       <th><button class="table-head-button" type="button" data-sort-work="ref">Chunk</button></th>
-                      <th>Status</th>
-                      <th><button class="table-head-button" type="button" data-sort-work="readiness">Readiness</button></th>
+                      <th>Work state</th>
+                      <th><button class="table-head-button" type="button" data-sort-work="readiness">Dispatch gate</button></th>
                       <th><button class="table-head-button" type="button" data-sort-work="updated">Updated</button></th>
                     </tr>
                   </thead>

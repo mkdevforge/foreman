@@ -347,6 +347,10 @@
     @apply overflow-hidden rounded-md border border-neutral-200 bg-white;
   }
 
+  .dispatch-gate-cell {
+    @apply grid gap-1;
+  }
+
   .detail-copy {
     @apply p-4;
   }
