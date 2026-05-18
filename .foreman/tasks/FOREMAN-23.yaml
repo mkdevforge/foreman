@@ -5,7 +5,7 @@ source_ref: docs/backlog/future-dispatch-human-gates.md#ui-direction
 description: Add narrow local UI mutation flows on top of existing Foreman CLI JSON contracts.
 status: doing
 created_at: 2026-05-18T14:26:55.569Z
-updated_at: 2026-05-18T15:02:19.632Z
+updated_at: 2026-05-18T19:07:04.650Z
 chunks:
   - id: ui-write-bridge
     title: UI write bridge
@@ -88,10 +88,10 @@ chunks:
 
       - A human can manage day-to-day task metadata from the local UI without leaving the existing
       CLI-backed contract.
-    status: review
+    status: done
     stage: implement
     created_at: 2026-05-18T14:26:55.690Z
-    updated_at: 2026-05-18T15:02:19.632Z
+    updated_at: 2026-05-18T18:55:14.772Z
     notes:
       - ts: 2026-05-18T15:02:19.632Z
         body: "Implemented basic local UI controls on top of the Phase 23 write bridge: task detail now has
@@ -128,8 +128,17 @@ chunks:
 
       - The local UI becomes a practical control surface for explicit dispatch operations while
       preserving Foreman's current audit and recovery model.
-    status: todo
-    stage: discovery
+    status: review
+    stage: implement
     created_at: 2026-05-18T14:26:55.748Z
-    updated_at: 2026-05-18T14:26:55.748Z
-    notes: []
+    updated_at: 2026-05-18T19:07:04.650Z
+    notes:
+      - ts: 2026-05-18T19:07:04.598Z
+        body: "Implemented dispatch UI controls on top of the CLI-backed bridge: chunk detail can start
+          ready chunks with confirmed agent launch, dispatch detail has confirmed
+          cancel/finish/reconcile controls, workspace inspect and diff display, and separate
+          confirmed merge/cleanup worktree actions. Added explicit UI server routes for dispatch
+          start/cancel/finish/reconcile/workspace/diff/merge/cleanup, browser coverage for
+          confirmation, dispatch start, workspace/diff display, finish, cleanup, and server route
+          mapping/validation tests. Updated README local UI docs. Verified build/typecheck, focused
+          bridge tests, browser UI tests, and full Bun suite."

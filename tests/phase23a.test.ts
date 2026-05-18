@@ -218,6 +218,99 @@ describe("Phase 23a UI write bridge", () => {
   });
 });
 
+describe("Phase 23 dispatch UI bridge", () => {
+  test("maps dispatch POST endpoints to JSON CLI commands", async () => {
+    const repoRoot = createTempDir();
+    const calls: UiCommandRunnerInput[] = [];
+    const server = startTestServer(repoRoot, async (input) => {
+      calls.push(input);
+      return jsonResult({ schema_version: 1, argv: input.argv });
+    });
+
+    await fetchJson(server, "/api/chunks/FOREMAN-23/ui-dispatch-controls/dispatch/start", jsonPost({ tool: "codex", stage: "review" }));
+    await fetchJson(server, "/api/dispatch-runs/run_123/cancel", jsonPost({}));
+    await fetchJson(
+      server,
+      "/api/dispatch-runs/run_123/finish",
+      jsonPost({ status: "failed", message: "Agent exited early.", allow_missing_session: true })
+    );
+    await fetchJson(server, "/api/dispatch-runs/run_123/reconcile", jsonPost({ older_than: "48h" }));
+    await fetchJson(server, "/api/dispatch-runs/reconcile", jsonPost({ older_than: "2h" }));
+    await fetchJson(server, "/api/dispatch-runs/run_123/merge", jsonPost({}));
+    await fetchJson(server, "/api/dispatch-runs/run_123/cleanup", jsonPost({ force: true }));
+
+    expect(calls).toEqual([
+      {
+        argv: ["dispatch", "start", "FOREMAN-23/ui-dispatch-controls", "--tool", "codex", "--stage", "review", "--json"],
+        cwd: repoRoot
+      },
+      { argv: ["dispatch", "cancel", "run_123", "--json"], cwd: repoRoot },
+      {
+        argv: [
+          "dispatch",
+          "finish",
+          "run_123",
+          "--status",
+          "failed",
+          "--message",
+          "Agent exited early.",
+          "--allow-missing-session",
+          "--json"
+        ],
+        cwd: repoRoot
+      },
+      { argv: ["dispatch", "reconcile", "run_123", "--older-than", "48h", "--json"], cwd: repoRoot },
+      { argv: ["dispatch", "reconcile", "--all", "--older-than", "2h", "--json"], cwd: repoRoot },
+      { argv: ["dispatch", "merge", "run_123", "--json"], cwd: repoRoot },
+      { argv: ["dispatch", "cleanup", "run_123", "--force", "--json"], cwd: repoRoot }
+    ]);
+  });
+
+  test("maps dispatch workspace and diff reads to JSON CLI commands", async () => {
+    const repoRoot = createTempDir();
+    const calls: UiCommandRunnerInput[] = [];
+    const server = startTestServer(repoRoot, async (input) => {
+      calls.push(input);
+      return jsonResult({ schema_version: 1, argv: input.argv });
+    });
+
+    await fetchJson(server, "/api/dispatch-runs/run_123/workspace");
+    await fetchJson(server, "/api/dispatch-runs/run_123/diff");
+    await fetchJson(server, "/api/dispatch-runs/run_123/diff?mode=stat");
+    await fetchJson(server, "/api/dispatch-runs/run_123/diff?mode=name-only");
+    const invalid = await fetchJson(server, "/api/dispatch-runs/run_123/diff?mode=patch-stat");
+
+    expect(invalid.status).toBe(400);
+    expect(invalid.body.error.code).toBe("ui_invalid_dispatch_diff_mode");
+    expect(calls).toEqual([
+      { argv: ["dispatch", "workspace", "run_123", "--json"], cwd: repoRoot },
+      { argv: ["dispatch", "diff", "run_123", "--json"], cwd: repoRoot },
+      { argv: ["dispatch", "diff", "run_123", "--stat", "--json"], cwd: repoRoot },
+      { argv: ["dispatch", "diff", "run_123", "--name-only", "--json"], cwd: repoRoot }
+    ]);
+  });
+
+  test("rejects invalid dispatch write bodies before running commands", async () => {
+    const calls: UiCommandRunnerInput[] = [];
+    const server = startTestServer(createTempDir(), async (input) => {
+      calls.push(input);
+      return jsonResult({ schema_version: 1 });
+    });
+
+    const missingTool = await fetchJson(server, "/api/chunks/FOREMAN-23/ui-dispatch-controls/dispatch/start", jsonPost({ stage: "review" }));
+    const badFinish = await fetchJson(server, "/api/dispatch-runs/run_123/finish", jsonPost({ status: "failed", allow_missing_session: "yes" }));
+    const badCleanup = await fetchJson(server, "/api/dispatch-runs/run_123/cleanup", jsonPost({ force: "true" }));
+
+    expect(missingTool.status).toBe(400);
+    expect(missingTool.body.error.details.field).toBe("tool");
+    expect(badFinish.status).toBe(400);
+    expect(badFinish.body.error.details.field).toBe("allow_missing_session");
+    expect(badCleanup.status).toBe(400);
+    expect(badCleanup.body.error.details.field).toBe("force");
+    expect(calls).toEqual([]);
+  });
+});
+
 function startTestServer(
   repoRoot: string,
   runner: (input: UiCommandRunnerInput) => Promise<{ exitCode: number | null; stdout: string; stderr: string }>

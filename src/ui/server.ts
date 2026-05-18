@@ -34,7 +34,7 @@ interface UiEndpoint {
 
 interface UiRoute {
   methods: {
-    GET?: () => UiEndpoint;
+    GET?: () => UiEndpoint | Response;
     POST?: (body: Record<string, unknown>) => UiEndpoint | Response;
   };
 }
@@ -128,7 +128,7 @@ async function handleUiRequest(
     return serveStaticUiFile(staticRoute);
   }
 
-  const route = resolveUiRoute(url.pathname);
+  const route = resolveUiRoute(url);
   if (route === null) {
     return jsonError(404, "ui_route_not_found", `unknown Foreman UI endpoint '${url.pathname}'`, 2, {
       path: url.pathname
@@ -180,7 +180,8 @@ async function resolveUiEndpoint(request: Request, url: URL, route: UiRoute): Pr
   return methodNotAllowed(request.method, Object.keys(route.methods).sort());
 }
 
-function resolveUiRoute(pathname: string): UiRoute | null {
+function resolveUiRoute(url: URL): UiRoute | null {
+  const pathname = url.pathname;
   let parts: string[];
   try {
     parts = pathname.split("/").filter(Boolean).map(decodeURIComponent);
@@ -218,6 +219,10 @@ function resolveUiRoute(pathname: string): UiRoute | null {
     );
   }
 
+  if (matchesPrefix(parts, ["api", "chunks"], 6) && parts[4] === "dispatch" && parts[5] === "start") {
+    return postRoute((body) => dispatchStartCommand(parts[2], parts[3], body));
+  }
+
   if (matchesPrefix(parts, ["api", "readiness"], 4)) {
     return getRoute(["chunk", "ready", `${parts[2]}/${parts[3]}`]);
   }
@@ -253,6 +258,38 @@ function resolveUiRoute(pathname: string): UiRoute | null {
 
   if (matches(parts, ["api", "dispatch-runs"])) {
     return getRoute(["dispatch", "list"]);
+  }
+
+  if (matches(parts, ["api", "dispatch-runs", "reconcile"])) {
+    return postRoute(dispatchReconcileAllCommand);
+  }
+
+  if (matchesPrefix(parts, ["api", "dispatch-runs"], 4) && parts[3] === "workspace") {
+    return getRoute(["dispatch", "workspace", parts[2]]);
+  }
+
+  if (matchesPrefix(parts, ["api", "dispatch-runs"], 4) && parts[3] === "diff") {
+    return { methods: { GET: () => dispatchDiffCommand(parts[2], url.searchParams) } };
+  }
+
+  if (matchesPrefix(parts, ["api", "dispatch-runs"], 4) && parts[3] === "cancel") {
+    return postRoute(() => ({ argv: ["dispatch", "cancel", parts[2]] }));
+  }
+
+  if (matchesPrefix(parts, ["api", "dispatch-runs"], 4) && parts[3] === "finish") {
+    return postRoute((body) => dispatchFinishCommand(parts[2], body));
+  }
+
+  if (matchesPrefix(parts, ["api", "dispatch-runs"], 4) && parts[3] === "reconcile") {
+    return postRoute((body) => dispatchReconcileCommand(parts[2], body));
+  }
+
+  if (matchesPrefix(parts, ["api", "dispatch-runs"], 4) && parts[3] === "merge") {
+    return postRoute(() => ({ argv: ["dispatch", "merge", parts[2]] }));
+  }
+
+  if (matchesPrefix(parts, ["api", "dispatch-runs"], 4) && parts[3] === "cleanup") {
+    return postRoute((body) => dispatchCleanupCommand(parts[2], body));
   }
 
   if (matchesPrefix(parts, ["api", "dispatch-runs"], 3)) {
@@ -295,6 +332,145 @@ function stringFieldCommand(
   }
 
   return { argv: buildArgv(value) };
+}
+
+function dispatchStartCommand(taskId: string, chunkId: string, body: Record<string, unknown>): UiEndpoint | Response {
+  const tool = requiredStringField(body, "tool");
+  if (tool instanceof Response) {
+    return tool;
+  }
+  const stage = optionalStringField(body, "stage");
+  if (stage instanceof Response) {
+    return stage;
+  }
+
+  const argv = ["dispatch", "start", `${taskId}/${chunkId}`, "--tool", tool];
+  if (stage !== null) {
+    argv.push("--stage", stage);
+  }
+  return { argv };
+}
+
+function dispatchFinishCommand(runId: string, body: Record<string, unknown>): UiEndpoint | Response {
+  const status = requiredStringField(body, "status");
+  if (status instanceof Response) {
+    return status;
+  }
+  const message = optionalStringField(body, "message");
+  if (message instanceof Response) {
+    return message;
+  }
+  const allowMissingSession = optionalBooleanField(body, "allow_missing_session");
+  if (allowMissingSession instanceof Response) {
+    return allowMissingSession;
+  }
+
+  const argv = ["dispatch", "finish", runId, "--status", status];
+  if (message !== null) {
+    argv.push("--message", message);
+  }
+  if (allowMissingSession) {
+    argv.push("--allow-missing-session");
+  }
+  return { argv };
+}
+
+function dispatchReconcileCommand(runId: string, body: Record<string, unknown>): UiEndpoint | Response {
+  const olderThan = optionalStringField(body, "older_than");
+  if (olderThan instanceof Response) {
+    return olderThan;
+  }
+
+  const argv = ["dispatch", "reconcile", runId];
+  if (olderThan !== null) {
+    argv.push("--older-than", olderThan);
+  }
+  return { argv };
+}
+
+function dispatchReconcileAllCommand(body: Record<string, unknown>): UiEndpoint | Response {
+  const olderThan = optionalStringField(body, "older_than");
+  if (olderThan instanceof Response) {
+    return olderThan;
+  }
+
+  const argv = ["dispatch", "reconcile", "--all"];
+  if (olderThan !== null) {
+    argv.push("--older-than", olderThan);
+  }
+  return { argv };
+}
+
+function dispatchCleanupCommand(runId: string, body: Record<string, unknown>): UiEndpoint | Response {
+  const force = optionalBooleanField(body, "force");
+  if (force instanceof Response) {
+    return force;
+  }
+
+  const argv = ["dispatch", "cleanup", runId];
+  if (force) {
+    argv.push("--force");
+  }
+  return { argv };
+}
+
+function dispatchDiffCommand(runId: string, params: URLSearchParams): UiEndpoint | Response {
+  const mode = params.get("mode") ?? "full";
+  if (mode !== "full" && mode !== "stat" && mode !== "name-only") {
+    return jsonError(400, "ui_invalid_dispatch_diff_mode", "invalid dispatch diff mode.", 2, {
+      mode,
+      expected_modes: ["full", "stat", "name-only"]
+    });
+  }
+
+  const argv = ["dispatch", "diff", runId];
+  if (mode === "stat") {
+    argv.push("--stat");
+  }
+  if (mode === "name-only") {
+    argv.push("--name-only");
+  }
+  return { argv };
+}
+
+function requiredStringField(body: Record<string, unknown>, field: string): string | Response {
+  const value = body[field];
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return jsonError(400, "ui_invalid_request_body", `request body must include a non-empty string '${field}' field`, 2, {
+      field
+    });
+  }
+
+  return value.trim();
+}
+
+function optionalStringField(body: Record<string, unknown>, field: string): string | null | Response {
+  const value = body[field];
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (typeof value !== "string") {
+    return jsonError(400, "ui_invalid_request_body", `request body field '${field}' must be a string when provided`, 2, {
+      field
+    });
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? null : trimmed;
+}
+
+function optionalBooleanField(body: Record<string, unknown>, field: string): boolean | Response {
+  const value = body[field];
+  if (value === undefined || value === null) {
+    return false;
+  }
+  if (typeof value !== "boolean") {
+    return jsonError(400, "ui_invalid_request_body", `request body field '${field}' must be a boolean when provided`, 2, {
+      field
+    });
+  }
+
+  return value;
 }
 
 function validateUiWriteRequest(request: Request, url: URL): Response | null {

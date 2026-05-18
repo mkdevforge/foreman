@@ -206,6 +206,78 @@ test("shows write command errors without hidden optimistic mutation", async ({ p
   expect(fixture.task.chunks[1].status).toBe("todo");
 });
 
+test("submits dispatch controls and displays workspace review data", async ({ page }) => {
+  const fixture = createFixtureState();
+  await page.addInitScript(() => {
+    (window as any).__foremanConfirmResult = true;
+    window.confirm = () => (window as any).__foremanConfirmResult;
+  });
+  await page.route("**/api/**", async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    const result = request.method() === "POST"
+      ? handleFixtureWrite(path, request.postData() || "{}", fixture)
+      : { status: 200, body: fixtureForPath(path, fixture) };
+
+    await route.fulfill({
+      status: result.status,
+      contentType: "application/json",
+      body: JSON.stringify(result.body)
+    });
+  });
+
+  await page.goto(serverUrl + "#/chunk/TASK-1/ready-chunk");
+  await expect(page.locator("#page-title")).toHaveText("Chunk Detail");
+
+  const startForm = page.locator('[data-action="dispatch-start"][data-task-id="TASK-1"][data-chunk-id="ready-chunk"]');
+  await startForm.locator('select[name="tool"]').selectOption("codex");
+  await startForm.locator('select[name="stage"]').selectOption("implement");
+  await page.evaluate(() => {
+    (window as any).__foremanConfirmResult = false;
+  });
+  await startForm.getByRole("button", { name: "Start dispatch" }).click();
+  expect(fixture.writes).toEqual([]);
+  await page.evaluate(() => {
+    (window as any).__foremanConfirmResult = true;
+  });
+  await startForm.getByRole("button", { name: "Start dispatch" }).click();
+  await expect(page.locator("#detail-view")).toContainText("Dispatch started.");
+  await expect(page.locator("#detail-view")).toContainText("run_started");
+
+  await page.goto(serverUrl + "#/dispatch/run_queued");
+  await expect(page.locator("#page-title")).toHaveText("Dispatch Detail");
+
+  await page.locator('[data-action="dispatch-workspace"][data-run-id="run_queued"]').getByRole("button", { name: "Inspect" }).click();
+  await expect(page.locator("#detail-view")).toContainText("Workspace inspected.");
+  await expect(page.locator("#detail-view")).toContainText("src/ui/app.js");
+  await expect(page.locator("#detail-view")).toContainText("notes.txt");
+
+  const diffForm = page.locator('[data-action="dispatch-diff"][data-run-id="run_queued"]');
+  await diffForm.locator('select[name="mode"]').selectOption("name-only");
+  await diffForm.getByRole("button", { name: "Show diff" }).click();
+  await expect(page.locator("#detail-view")).toContainText("Diff loaded.");
+  await expect(page.locator("#detail-view")).toContainText("dispatch controls");
+
+  const finishForm = page.locator('[data-action="dispatch-finish"][data-run-id="run_queued"]');
+  await finishForm.locator('select[name="status"]').selectOption("failed");
+  await finishForm.locator('textarea[name="message"]').fill("Stopped after review.");
+  await finishForm.getByRole("button", { name: "Finish" }).click();
+  await expect(page.locator("#detail-view")).toContainText("Dispatch finished.");
+  await expect(page.locator("#detail-view")).toContainText("failed");
+
+  const cleanupForm = page.locator('[data-action="dispatch-cleanup"][data-run-id="run_queued"]');
+  await cleanupForm.locator('input[name="force"]').check();
+  await cleanupForm.getByRole("button", { name: "Clean up" }).click();
+  await expect(page.locator("#detail-view")).toContainText("Dispatch cleaned up.");
+
+  expect(fixture.writes).toEqual([
+    { path: "/api/chunks/TASK-1/ready-chunk/dispatch/start", body: { tool: "codex", stage: "implement" } },
+    { path: "/api/dispatch-runs/run_queued/finish", body: { status: "failed", message: "Stopped after review.", allow_missing_session: false } },
+    { path: "/api/dispatch-runs/run_queued/cleanup", body: { force: true } }
+  ]);
+  await expectNoHorizontalOverflow(page);
+});
+
 function startForemanUi(): Promise<{ process: ChildProcess; url: string }> {
   return new Promise((resolvePromise, reject) => {
     const child = spawn("bun", ["run", "foreman", "--", "ui", "--port", "0"], {
@@ -262,6 +334,7 @@ type FixtureQuestion = {
   answer: string | null;
 };
 type FixtureDecision = { id: string; body: string; decided_at: string };
+type FixtureDispatchRun = Record<string, any>;
 type FixtureTask = {
   schema_version: 1;
   id: string;
@@ -276,6 +349,7 @@ type FixtureState = {
   task: FixtureTask;
   questionsByChunk: Map<string, FixtureQuestion[]>;
   decisionsByChunk: Map<string, FixtureDecision[]>;
+  dispatchRuns: FixtureDispatchRun[];
   writes: Array<{ path: string; body: unknown }>;
   nextQuestionNumber: number;
   nextDecisionNumber: number;
@@ -314,6 +388,7 @@ function createFixtureState(): FixtureState {
         ]
       ]
     ]),
+    dispatchRuns: dispatchRunFixtures(),
     writes: [] as Array<{ path: string; body: unknown }>,
     nextQuestionNumber: 1,
     nextDecisionNumber: 1,
@@ -456,31 +531,23 @@ function fixtureForPath(path: string, state = createFixtureState()): unknown {
     };
   }
 
+  if (path === "/api/reviews/TASK-1/ready-chunk") {
+    return {
+      schema_version: 1,
+      review: {
+        type: "chunk",
+        task: state.task,
+        chunk: state.task.chunks[0],
+        linked_sessions_by_stage: [],
+        total_cost_usd: 0
+      }
+    };
+  }
+
   if (path === "/api/dispatch-runs") {
     return {
       schema_version: 1,
-      dispatch_runs: [
-        {
-          id: "run_queued",
-          repo_name: "foreman",
-          task_id: "TASK-1",
-          chunk_id: "blocked-chunk",
-          status: "queued",
-          updated_at: "2026-05-18T10:00:00.000Z",
-          attempts: [],
-          events: [{ message: "Queued dispatch run." }]
-        },
-        {
-          id: "run_failed",
-          repo_name: "foreman",
-          task_id: "TASK-2",
-          chunk_id: "done-chunk",
-          status: "failed",
-          updated_at: "2026-05-18T09:00:00.000Z",
-          attempts: [{ tool: "codex" }],
-          events: [{ message: "Dispatch attempt failed." }]
-        }
-      ]
+      dispatch_runs: state.dispatchRuns
     };
   }
 
@@ -502,42 +569,48 @@ function fixtureForPath(path: string, state = createFixtureState()): unknown {
   }
 
   if (path === "/api/dispatch-runs/run_queued") {
+    const run = state.dispatchRuns.find((candidate) => candidate.id === "run_queued");
     return {
       schema_version: 1,
-      dispatch_run: {
-        id: "run_queued",
-        repo_name: "foreman",
-        task_id: "TASK-1",
-        chunk_id: "blocked-chunk",
-        requested_stage: "implement",
-        status: "running",
-        requested_by: null,
-        source: "cli",
-        created_at: "2026-05-18T09:55:00.000Z",
-        updated_at: "2026-05-18T10:00:00.000Z",
-        finished_at: null,
-        attempts: [
-          {
-            id: "attempt_queued",
-            run_id: "run_queued",
-            attempt_number: 1,
-            status: "launching_agent",
-            tool: "codex",
-            workspace_path: "/tmp/foreman-worktree",
-            worktree_branch: "foreman/TASK-1",
-            process_id: 12345,
-            started_at: "2026-05-18T09:56:00.000Z",
-            ended_at: null,
-            error_message: null,
-            session_id: "session_1",
-            session: sessionOneFixture()
-          }
-        ],
-        events: [
-          { id: "evt_queued", run_id: "run_queued", attempt_id: null, ts: "2026-05-18T09:55:00.000Z", type: "queued", message: "Queued dispatch run.", data_json: "{\"task_id\":\"TASK-1\"}" },
-          { id: "evt_launch", run_id: "run_queued", attempt_id: "attempt_queued", ts: "2026-05-18T09:56:00.000Z", type: "agent_launched", message: "Launched codex.", data_json: "{\"process_id\":12345}" }
-        ]
+      dispatch_run: run ?? null
+    };
+  }
+
+  if (path === "/api/dispatch-runs/run_queued/workspace") {
+    return {
+      schema_version: 1,
+      dispatch_run: state.dispatchRuns.find((candidate) => candidate.id === "run_queued"),
+      workspace: {
+        run_id: "run_queued",
+        attempt_id: "attempt_queued",
+        attempt_number: 1,
+        workspace_path: "/tmp/foreman-worktree",
+        expected_branch: "foreman/TASK-1",
+        git_root: "/tmp/foreman-worktree",
+        branch: "foreman/TASK-1",
+        branch_matches: true,
+        dirty: true,
+        changed_files: [{ path: "src/ui/app.js", index_status: "M", worktree_status: "M", original_path: null }],
+        untracked_files: ["notes.txt"],
+        upstream: null,
+        ahead: null,
+        behind: null,
+        recent_commits: [{ sha: "abcdef123456", subject: "Implement fixture work", author_name: "Fixture User", date: "2026-05-18T09:59:00.000Z" }]
       }
+    };
+  }
+
+  if (path === "/api/dispatch-runs/run_queued/diff") {
+    return {
+      schema_version: 1,
+      dispatch_run: state.dispatchRuns.find((candidate) => candidate.id === "run_queued"),
+      workspace: {
+        run_id: "run_queued",
+        attempt_id: "attempt_queued",
+        attempt_number: 1,
+        workspace_path: "/tmp/foreman-worktree"
+      },
+      diff: { mode: "full", text: "diff --git a/src/ui/app.js b/src/ui/app.js\n+dispatch controls\n" }
     };
   }
 
@@ -627,6 +700,59 @@ function handleFixtureWrite(path: string, rawBody: string, state: FixtureState):
     return { status: 200, body: { schema_version: 1, task_id: "TASK-1", chunk_id: parts[3], decision } };
   }
 
+  if (parts.length === 6 && parts[0] === "api" && parts[1] === "chunks" && parts[2] === "TASK-1" && parts[4] === "dispatch" && parts[5] === "start") {
+    const chunk = requireFixtureChunk(state, parts[3]);
+    const run = {
+      id: "run_started",
+      repo_name: "foreman",
+      task_id: "TASK-1",
+      chunk_id: chunk.id,
+      requested_stage: readBodyString(body, "stage"),
+      status: "running",
+      tool: readBodyString(body, "tool"),
+      requested_by: null,
+      source: "ui",
+      created_at: "2026-05-18T11:04:00.000Z",
+      updated_at: "2026-05-18T11:04:00.000Z",
+      finished_at: null,
+      attempts: [{ id: "attempt_started", tool: readBodyString(body, "tool"), session_id: null }],
+      events: [{ message: "Started dispatch run." }]
+    };
+    state.dispatchRuns.unshift(run);
+    return { status: 200, body: { schema_version: 1, dispatch_run: run } };
+  }
+
+  if (parts.length === 4 && parts[0] === "api" && parts[1] === "dispatch-runs" && parts[2] === "run_queued") {
+    const run = requireFixtureDispatchRun(state, parts[2]);
+    if (parts[3] === "finish") {
+      run.status = readBodyString(body, "status");
+      run.updated_at = "2026-05-18T11:05:00.000Z";
+      run.finished_at = "2026-05-18T11:05:00.000Z";
+      run.events.push({ message: "Finished dispatch run." });
+      return { status: 200, body: { schema_version: 1, dispatch_run: run, changed: true } };
+    }
+    if (parts[3] === "reconcile") {
+      run.events.push({ message: "Reconciled dispatch run." });
+      return {
+        status: 200,
+        body: {
+          schema_version: 1,
+          dispatch_run: run,
+          reconciliation: { reason: "not_stale", changed: false },
+          changed: false
+        }
+      };
+    }
+    if (parts[3] === "merge") {
+      run.events.push({ message: "Merged dispatch run." });
+      return { status: 200, body: { schema_version: 1, dispatch_run: run, merge: { changed: true }, changed: true } };
+    }
+    if (parts[3] === "cleanup") {
+      run.events.push({ message: "Cleaned up dispatch run." });
+      return { status: 200, body: { schema_version: 1, dispatch_run: run, cleanup: { changed: true, force: body.force === true }, changed: true } };
+    }
+  }
+
   return { status: 404, body: { schema_version: 1, error: { message: "unexpected write path " + path } } };
 }
 
@@ -652,6 +778,14 @@ function requireFixtureChunk(state: FixtureState, chunkId: string): FixtureChunk
     throw new Error("missing fixture chunk " + chunkId);
   }
   return chunk;
+}
+
+function requireFixtureDispatchRun(state: FixtureState, runId: string): FixtureDispatchRun {
+  const run = state.dispatchRuns.find((candidate) => candidate.id === runId);
+  if (run === undefined) {
+    throw new Error("missing fixture dispatch run " + runId);
+  }
+  return run;
 }
 
 function taskOneFixture(): FixtureTask {
@@ -686,6 +820,62 @@ function taskOneFixture(): FixtureTask {
       }
     ]
   };
+}
+
+function dispatchRunFixtures(): FixtureDispatchRun[] {
+  return [
+    {
+      id: "run_queued",
+      repo_name: "foreman",
+      task_id: "TASK-1",
+      chunk_id: "blocked-chunk",
+      requested_stage: "implement",
+      status: "running",
+      tool: "codex",
+      requested_by: null,
+      source: "cli",
+      created_at: "2026-05-18T09:55:00.000Z",
+      updated_at: "2026-05-18T10:00:00.000Z",
+      finished_at: null,
+      attempts: [
+        {
+          id: "attempt_queued",
+          run_id: "run_queued",
+          attempt_number: 1,
+          status: "launching_agent",
+          tool: "codex",
+          workspace_path: "/tmp/foreman-worktree",
+          worktree_branch: "foreman/TASK-1",
+          process_id: 12345,
+          started_at: "2026-05-18T09:56:00.000Z",
+          ended_at: null,
+          error_message: null,
+          session_id: "session_1",
+          session: sessionOneFixture()
+        }
+      ],
+      events: [
+        { id: "evt_queued", run_id: "run_queued", attempt_id: null, ts: "2026-05-18T09:55:00.000Z", type: "queued", message: "Queued dispatch run.", data_json: "{\"task_id\":\"TASK-1\"}" },
+        { id: "evt_launch", run_id: "run_queued", attempt_id: "attempt_queued", ts: "2026-05-18T09:56:00.000Z", type: "agent_launched", message: "Launched codex.", data_json: "{\"process_id\":12345}" }
+      ]
+    },
+    {
+      id: "run_failed",
+      repo_name: "foreman",
+      task_id: "TASK-2",
+      chunk_id: "done-chunk",
+      requested_stage: "review",
+      status: "failed",
+      tool: "codex",
+      requested_by: null,
+      source: "cli",
+      created_at: "2026-05-18T08:55:00.000Z",
+      updated_at: "2026-05-18T09:00:00.000Z",
+      finished_at: "2026-05-18T09:00:00.000Z",
+      attempts: [{ id: "attempt_failed", tool: "codex", session_id: null }],
+      events: [{ message: "Dispatch attempt failed." }]
+    }
+  ];
 }
 
 function sessionOneFixture() {

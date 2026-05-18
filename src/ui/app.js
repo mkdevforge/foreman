@@ -1,6 +1,10 @@
 const STALE_AFTER_MS = 5 * 60 * 1000;
 const CHUNK_STATUSES = ["todo", "doing", "review", "done", "blocked"];
 const CHUNK_STAGES = ["discovery", "plan", "implement", "review"];
+const DISPATCH_TOOLS = ["codex", "claude-code"];
+const DISPATCH_STAGES = ["plan", "implement", "review"];
+const DISPATCH_FINISH_STATUSES = ["succeeded", "failed"];
+const DISPATCH_DIFF_MODES = ["full", "stat", "name-only"];
 
 const endpoints = {
   tasks: "/api/tasks",
@@ -38,6 +42,9 @@ const state = {
   write: {
     actions: new Map(),
     last: null
+  },
+  read: {
+    actions: new Map()
   }
 };
 
@@ -86,6 +93,16 @@ function bindControls() {
 
     event.preventDefault();
     void submitWriteForm(form);
+  });
+
+  document.addEventListener("submit", (event) => {
+    const form = event.target instanceof HTMLFormElement ? event.target : null;
+    if (form === null || !form.matches("[data-ui-read-form]")) {
+      return;
+    }
+
+    event.preventDefault();
+    void submitReadForm(form);
   });
 }
 
@@ -566,6 +583,11 @@ async function submitWriteForm(form) {
     return;
   }
 
+  const confirmMessage = form.dataset.confirm || "";
+  if (confirmMessage.length > 0 && !window.confirm(confirmMessage)) {
+    return;
+  }
+
   setWriteAction(actionKey, "pending", "Saving");
   renderRoute();
 
@@ -579,13 +601,41 @@ async function submitWriteForm(form) {
   }
 }
 
+async function submitReadForm(form) {
+  const actionKey = form.dataset.actionKey || "";
+  if (actionKey.length === 0 || state.read.actions.get(actionKey)?.status === "pending") {
+    return;
+  }
+
+  let request;
+  try {
+    request = readRequestFromForm(form);
+  } catch (error) {
+    setReadAction(actionKey, "error", error.message || "Unable to load data.");
+    renderRoute();
+    return;
+  }
+
+  setReadAction(actionKey, "pending", request.pendingMessage);
+  renderRoute();
+
+  try {
+    const body = await fetchJson(request.path);
+    setReadAction(actionKey, "success", request.successMessage, body);
+    renderRoute();
+  } catch (error) {
+    setReadAction(actionKey, "error", readWriteErrorMessage(error.body) || error.message || "Request failed.");
+    renderRoute();
+  }
+}
+
 function writeRequestFromForm(form) {
   const data = new FormData(form);
   const action = form.dataset.action || "";
-  const taskId = requireDataAttribute(form, "taskId");
-  const chunkId = requireDataAttribute(form, "chunkId");
 
   if (action === "chunk-status") {
+    const taskId = requireDataAttribute(form, "taskId");
+    const chunkId = requireDataAttribute(form, "chunkId");
     return {
       path: apiPath(["chunks", taskId, chunkId, "status"]),
       body: { status: requireFormString(data, "status") },
@@ -594,6 +644,8 @@ function writeRequestFromForm(form) {
   }
 
   if (action === "chunk-stage") {
+    const taskId = requireDataAttribute(form, "taskId");
+    const chunkId = requireDataAttribute(form, "chunkId");
     return {
       path: apiPath(["chunks", taskId, chunkId, "stage"]),
       body: { stage: requireFormString(data, "stage") },
@@ -602,6 +654,8 @@ function writeRequestFromForm(form) {
   }
 
   if (action === "chunk-note") {
+    const taskId = requireDataAttribute(form, "taskId");
+    const chunkId = requireDataAttribute(form, "chunkId");
     return {
       path: apiPath(["chunks", taskId, chunkId, "notes"]),
       body: { body: requireFormString(data, "body") },
@@ -610,6 +664,8 @@ function writeRequestFromForm(form) {
   }
 
   if (action === "question-add") {
+    const taskId = requireDataAttribute(form, "taskId");
+    const chunkId = requireDataAttribute(form, "chunkId");
     return {
       path: apiPath(["questions", taskId, chunkId]),
       body: { body: requireFormString(data, "body") },
@@ -618,6 +674,8 @@ function writeRequestFromForm(form) {
   }
 
   if (action === "question-answer") {
+    const taskId = requireDataAttribute(form, "taskId");
+    const chunkId = requireDataAttribute(form, "chunkId");
     const questionId = requireDataAttribute(form, "questionId");
     return {
       path: apiPath(["questions", taskId, chunkId, questionId, "answer"]),
@@ -627,6 +685,8 @@ function writeRequestFromForm(form) {
   }
 
   if (action === "decision-add") {
+    const taskId = requireDataAttribute(form, "taskId");
+    const chunkId = requireDataAttribute(form, "chunkId");
     return {
       path: apiPath(["decisions", taskId, chunkId]),
       body: { body: requireFormString(data, "body") },
@@ -634,7 +694,99 @@ function writeRequestFromForm(form) {
     };
   }
 
+  if (action === "dispatch-start") {
+    const taskId = requireDataAttribute(form, "taskId");
+    const chunkId = requireDataAttribute(form, "chunkId");
+    return {
+      path: apiPath(["chunks", taskId, chunkId, "dispatch", "start"]),
+      body: {
+        tool: requireFormString(data, "tool"),
+        stage: optionalFormString(data, "stage")
+      },
+      successMessage: "Dispatch started."
+    };
+  }
+
+  if (action === "dispatch-cancel") {
+    const runId = requireDataAttribute(form, "runId");
+    return {
+      path: apiPath(["dispatch-runs", runId, "cancel"]),
+      body: {},
+      successMessage: "Dispatch canceled."
+    };
+  }
+
+  if (action === "dispatch-finish") {
+    const runId = requireDataAttribute(form, "runId");
+    return {
+      path: apiPath(["dispatch-runs", runId, "finish"]),
+      body: {
+        status: requireFormString(data, "status"),
+        message: optionalFormString(data, "message"),
+        allow_missing_session: data.get("allow_missing_session") === "on"
+      },
+      successMessage: "Dispatch finished."
+    };
+  }
+
+  if (action === "dispatch-reconcile") {
+    const runId = requireDataAttribute(form, "runId");
+    return {
+      path: apiPath(["dispatch-runs", runId, "reconcile"]),
+      body: {
+        older_than: optionalFormString(data, "older_than")
+      },
+      successMessage: "Dispatch reconciled."
+    };
+  }
+
+  if (action === "dispatch-merge") {
+    const runId = requireDataAttribute(form, "runId");
+    return {
+      path: apiPath(["dispatch-runs", runId, "merge"]),
+      body: {},
+      successMessage: "Dispatch merged."
+    };
+  }
+
+  if (action === "dispatch-cleanup") {
+    const runId = requireDataAttribute(form, "runId");
+    return {
+      path: apiPath(["dispatch-runs", runId, "cleanup"]),
+      body: {
+        force: data.get("force") === "on"
+      },
+      successMessage: "Dispatch cleaned up."
+    };
+  }
+
   throw new Error("Unknown write action.");
+}
+
+function readRequestFromForm(form) {
+  const data = new FormData(form);
+  const action = form.dataset.action || "";
+
+  if (action === "dispatch-workspace") {
+    const runId = requireDataAttribute(form, "runId");
+    return {
+      path: apiPath(["dispatch-runs", runId, "workspace"]),
+      pendingMessage: "Inspecting workspace",
+      successMessage: "Workspace inspected."
+    };
+  }
+
+  if (action === "dispatch-diff") {
+    const runId = requireDataAttribute(form, "runId");
+    const mode = requireFormString(data, "mode");
+    return {
+      path: apiPath(["dispatch-runs", runId, "diff"]) + "?mode=" + encodeURIComponent(mode),
+      pendingMessage: "Loading diff",
+      successMessage: "Diff loaded."
+    };
+  }
+
+  throw new Error("Unknown read action.");
 }
 
 function requireDataAttribute(form, key) {
@@ -652,6 +804,12 @@ function requireFormString(data, key) {
     throw new Error("Enter a value before saving.");
   }
   return text;
+}
+
+function optionalFormString(data, key) {
+  const value = data.get(key);
+  const text = typeof value === "string" ? value.trim() : "";
+  return text.length === 0 ? null : text;
 }
 
 function renderRoute() {
@@ -771,6 +929,7 @@ function renderChunkDetail(data) {
         ["Dispatch runs", dispatchRuns.length]
       ])) +
       detailPanel("Controls", "", renderChunkControls(data.task.id, data.chunk), "detail-panel-wide") +
+      detailPanel("Dispatch Start", "", renderDispatchStartControls(data.task.id, data.chunk, data.readiness), "detail-panel-wide") +
       detailPanel("Spec", "", preBlock(data.chunk.spec || "No spec."), "detail-panel-wide") +
       detailPanel("Readiness", blockers.length + " blockers", renderReadinessDetail(data.readiness, blockers, warnings)) +
       detailPanel("Open Questions", String(array(data.questions).filter((question) => question.status === "open").length), renderQuestionList(data.questions, data.task.id, data.chunk.id)) +
@@ -793,6 +952,7 @@ function renderDispatchDetail(data) {
     chip(run.status || "unknown", run.status) + chip(run.requested_stage || "stage unset", run.requested_stage),
     taskChunkLink
   ) +
+    detailWriteBanner() +
     "<div class=\"detail-grid\">" +
       detailPanel("Run State", "", keyGrid([
         ["Full run id", run.id],
@@ -805,6 +965,9 @@ function renderDispatchDetail(data) {
         ["Updated", formatDateTime(run.updated_at)],
         ["Finished", formatDateTime(run.finished_at)]
       ])) +
+      detailPanel("Lifecycle Controls", "", renderDispatchLifecycleControls(run)) +
+      detailPanel("Workspace Review", "", renderDispatchWorkspaceControls(run), "detail-panel-wide") +
+      detailPanel("Advanced Worktree Actions", "", renderDispatchAdvancedControls(run), "detail-panel-wide") +
       detailPanel("Attempts", String(attempts.length), renderAttempts(attempts), "detail-panel-wide") +
       detailPanel("Event Timeline", String(events.length), renderEvents(events), "detail-panel-wide") +
     "</div>";
@@ -874,6 +1037,28 @@ function renderChunkControls(taskId, chunk) {
   "</div>";
 }
 
+function renderDispatchStartControls(taskId, chunk, readiness) {
+  const ref = taskId + "/" + chunk.id;
+  const actionKey = dispatchActionKey("dispatch-start", ref);
+  const pending = isWritePending(actionKey);
+  const ready = readiness.state === "ready";
+  const stage = DISPATCH_STAGES.includes(chunk.stage) ? chunk.stage : "implement";
+
+  return "<div class=\"control-grid\">" +
+    "<form class=\"write-form write-form-card\" data-ui-write-form data-action=\"dispatch-start\" data-action-key=\"" + esc(actionKey) + "\" data-task-id=\"" + esc(taskId) + "\" data-chunk-id=\"" + esc(chunk.id) + "\" data-confirm=\"Start dispatch for " + esc(ref) + "? This can launch a local agent.\">" +
+      "<label class=\"field\"><span>Tool</span>" +
+        "<select class=\"select-control\" name=\"tool\"" + disabledAttr(pending || !ready) + ">" + renderOptions(DISPATCH_TOOLS, "codex") + "</select>" +
+      "</label>" +
+      "<label class=\"field\"><span>Stage</span>" +
+        "<select class=\"select-control\" name=\"stage\"" + disabledAttr(pending || !ready) + ">" + renderOptions(DISPATCH_STAGES, stage) + "</select>" +
+      "</label>" +
+      "<div class=\"form-actions\"><button class=\"button-primary\" type=\"submit\"" + disabledAttr(pending || !ready) + ">" + esc(pending ? "Starting" : "Start dispatch") + "</button></div>" +
+      (ready ? "" : "<p class=\"form-status form-status-pending\">Chunk is not dispatch-ready.</p>") +
+      renderWriteActionStatus(actionKey) +
+    "</form>" +
+  "</div>";
+}
+
 function renderChunkStateControls(taskId, chunk, compact) {
   return "<div class=\"" + (compact ? "chunk-table-controls" : "state-control-pair") + "\">" +
     renderChunkSelectForm(taskId, chunk, "status", compact) +
@@ -907,6 +1092,221 @@ function renderTextWriteForm(options) {
     "<div class=\"form-actions\"><button class=\"button-primary\" type=\"submit\"" + disabledAttr(pending) + ">" + esc(pending ? "Saving" : options.buttonLabel) + "</button></div>" +
     renderWriteActionStatus(options.key) +
   "</form>";
+}
+
+function renderDispatchLifecycleControls(run) {
+  const forms = [];
+  if (run.status === "queued") {
+    forms.push(renderDispatchButtonWriteForm({
+      action: "dispatch-cancel",
+      key: dispatchActionKey("dispatch-cancel", run.id),
+      runId: run.id,
+      label: "Cancel queued run",
+      buttonLabel: "Cancel",
+      confirm: "Cancel dispatch run " + shortId(run.id) + "?"
+    }));
+  }
+
+  if (run.status === "running") {
+    forms.push(renderDispatchFinishForm(run));
+  }
+
+  if (run.status === "claimed" || run.status === "running") {
+    forms.push(renderDispatchReconcileForm(run));
+  }
+
+  if (forms.length === 0) {
+    return panelState("No lifecycle controls for this status.");
+  }
+
+  return "<div class=\"control-grid\">" + forms.join("") + "</div>";
+}
+
+function renderDispatchAdvancedControls(run) {
+  const forms = [];
+  if (run.status === "succeeded") {
+    forms.push(renderDispatchButtonWriteForm({
+      action: "dispatch-merge",
+      key: dispatchActionKey("dispatch-merge", run.id),
+      runId: run.id,
+      label: "Merge reviewed work",
+      buttonLabel: "Merge",
+      confirm: "Merge dispatch run " + shortId(run.id) + " into the current branch?"
+    }));
+  }
+
+  if (isDispatchTerminal(run.status)) {
+    forms.push(renderDispatchCleanupForm(run));
+  }
+
+  if (forms.length === 0) {
+    return panelState("No terminal worktree actions for this status.");
+  }
+
+  return "<div class=\"control-grid\">" + forms.join("") + "</div>";
+}
+
+function renderDispatchButtonWriteForm(options) {
+  const pending = isWritePending(options.key);
+  return "<form class=\"write-form write-form-card\" data-ui-write-form data-action=\"" + esc(options.action) + "\" data-action-key=\"" + esc(options.key) + "\" data-run-id=\"" + esc(options.runId) + "\" data-confirm=\"" + esc(options.confirm) + "\">" +
+    "<div class=\"field\"><span>" + esc(options.label) + "</span></div>" +
+    "<div class=\"form-actions\"><button class=\"button-primary\" type=\"submit\"" + disabledAttr(pending) + ">" + esc(pending ? "Working" : options.buttonLabel) + "</button></div>" +
+    renderWriteActionStatus(options.key) +
+  "</form>";
+}
+
+function renderDispatchFinishForm(run) {
+  const actionKey = dispatchActionKey("dispatch-finish", run.id);
+  const pending = isWritePending(actionKey);
+  return "<form class=\"write-form write-form-card\" data-ui-write-form data-action=\"dispatch-finish\" data-action-key=\"" + esc(actionKey) + "\" data-run-id=\"" + esc(run.id) + "\" data-confirm=\"Finish dispatch run " + esc(shortId(run.id)) + "?\">" +
+    "<label class=\"field\"><span>Result</span>" +
+      "<select class=\"select-control\" name=\"status\"" + disabledAttr(pending) + ">" + renderOptions(DISPATCH_FINISH_STATUSES, "succeeded") + "</select>" +
+    "</label>" +
+    "<label class=\"field\"><span>Message</span>" +
+      "<textarea class=\"textarea-control\" name=\"message\" rows=\"2\" maxlength=\"1000\"" + disabledAttr(pending) + "></textarea>" +
+    "</label>" +
+    "<label class=\"checkbox-field\"><input type=\"checkbox\" name=\"allow_missing_session\"" + disabledAttr(pending) + "> <span>Allow missing session</span></label>" +
+    "<div class=\"form-actions\"><button class=\"button-primary\" type=\"submit\"" + disabledAttr(pending) + ">" + esc(pending ? "Finishing" : "Finish") + "</button></div>" +
+    renderWriteActionStatus(actionKey) +
+  "</form>";
+}
+
+function renderDispatchReconcileForm(run) {
+  const actionKey = dispatchActionKey("dispatch-reconcile", run.id);
+  const pending = isWritePending(actionKey);
+  return "<form class=\"write-form write-form-card\" data-ui-write-form data-action=\"dispatch-reconcile\" data-action-key=\"" + esc(actionKey) + "\" data-run-id=\"" + esc(run.id) + "\" data-confirm=\"Reconcile dispatch run " + esc(shortId(run.id)) + "?\">" +
+    "<label class=\"field\"><span>Older than</span>" +
+      "<input class=\"input-control\" name=\"older_than\" placeholder=\"24h\" maxlength=\"24\"" + disabledAttr(pending) + ">" +
+    "</label>" +
+    "<div class=\"form-actions\"><button class=\"button-primary\" type=\"submit\"" + disabledAttr(pending) + ">" + esc(pending ? "Reconciling" : "Reconcile") + "</button></div>" +
+    renderWriteActionStatus(actionKey) +
+  "</form>";
+}
+
+function renderDispatchCleanupForm(run) {
+  const actionKey = dispatchActionKey("dispatch-cleanup", run.id);
+  const pending = isWritePending(actionKey);
+  return "<form class=\"write-form write-form-card\" data-ui-write-form data-action=\"dispatch-cleanup\" data-action-key=\"" + esc(actionKey) + "\" data-run-id=\"" + esc(run.id) + "\" data-confirm=\"Clean up dispatch worktree for " + esc(shortId(run.id)) + "?\">" +
+    "<label class=\"checkbox-field\"><input type=\"checkbox\" name=\"force\"" + disabledAttr(pending) + "> <span>Force</span></label>" +
+    "<div class=\"form-actions\"><button class=\"button-primary\" type=\"submit\"" + disabledAttr(pending) + ">" + esc(pending ? "Cleaning" : "Clean up") + "</button></div>" +
+    renderWriteActionStatus(actionKey) +
+  "</form>";
+}
+
+function renderDispatchWorkspaceControls(run) {
+  const workspaceKey = dispatchActionKey("dispatch-workspace", run.id);
+  const diffKey = dispatchActionKey("dispatch-diff", run.id);
+  const workspacePending = isReadPending(workspaceKey);
+  const diffPending = isReadPending(diffKey);
+
+  return "<div class=\"dispatch-review-stack\">" +
+    "<div class=\"control-grid\">" +
+      "<form class=\"write-form write-form-card\" data-ui-read-form data-action=\"dispatch-workspace\" data-action-key=\"" + esc(workspaceKey) + "\" data-run-id=\"" + esc(run.id) + "\">" +
+        "<div class=\"field\"><span>Workspace</span></div>" +
+        "<div class=\"form-actions\"><button class=\"button-secondary\" type=\"submit\"" + disabledAttr(workspacePending) + ">" + esc(workspacePending ? "Inspecting" : "Inspect") + "</button></div>" +
+        renderReadActionStatus(workspaceKey) +
+      "</form>" +
+      "<form class=\"write-form write-form-card\" data-ui-read-form data-action=\"dispatch-diff\" data-action-key=\"" + esc(diffKey) + "\" data-run-id=\"" + esc(run.id) + "\">" +
+        "<label class=\"field\"><span>Diff</span>" +
+          "<select class=\"select-control\" name=\"mode\"" + disabledAttr(diffPending) + ">" + renderOptions(DISPATCH_DIFF_MODES, "full") + "</select>" +
+        "</label>" +
+        "<div class=\"form-actions\"><button class=\"button-secondary\" type=\"submit\"" + disabledAttr(diffPending) + ">" + esc(diffPending ? "Loading" : "Show diff") + "</button></div>" +
+        renderReadActionStatus(diffKey) +
+      "</form>" +
+    "</div>" +
+    renderDispatchReadOutput(workspaceKey, "workspace") +
+    renderDispatchReadOutput(diffKey, "diff") +
+  "</div>";
+}
+
+function renderDispatchReadOutput(actionKey, kind) {
+  const entry = state.read.actions.get(actionKey);
+  if (!entry || entry.status !== "success") {
+    return "";
+  }
+  if (kind === "workspace") {
+    return renderWorkspaceInspection(entry.body?.workspace);
+  }
+  if (kind === "diff") {
+    return renderWorkspaceDiff(entry.body?.diff);
+  }
+  return "";
+}
+
+function renderWorkspaceInspection(workspace) {
+  if (!workspace || typeof workspace !== "object") {
+    return panelState("Workspace inspection response was empty.", true);
+  }
+
+  return "<div class=\"dispatch-output\">" +
+    keyGrid([
+      ["Workspace", workspace.workspace_path || "null"],
+      ["Git root", workspace.git_root || "null"],
+      ["Branch", workspace.branch || "detached"],
+      ["Expected branch", workspace.expected_branch || "null"],
+      ["Branch matches", workspace.branch_matches ? "yes" : "no"],
+      ["Dirty", workspace.dirty ? "yes" : "no"],
+      ["Ahead/behind", (workspace.ahead ?? "null") + "/" + (workspace.behind ?? "null")],
+      ["Upstream", workspace.upstream || "null"]
+    ]) +
+    renderWorkspaceFiles(workspace) +
+    renderWorkspaceCommits(workspace.recent_commits) +
+  "</div>";
+}
+
+function renderWorkspaceFiles(workspace) {
+  const changed = array(workspace.changed_files);
+  const untracked = array(workspace.untracked_files).map((path) => ({
+    path,
+    index_status: "?",
+    worktree_status: "?",
+    original_path: null
+  }));
+  const files = changed.concat(untracked);
+  if (files.length === 0) {
+    return panelState("No workspace file changes.");
+  }
+
+  return "<div class=\"table-scroll\"><table class=\"data-table detail-table\"><thead><tr><th>Path</th><th>Index</th><th>Worktree</th><th>Original</th></tr></thead><tbody>" +
+    files.map((file) =>
+      "<tr>" +
+        "<td class=\"mono\">" + esc(file.path || "") + "</td>" +
+        "<td class=\"mono\">" + esc(file.index_status || "") + "</td>" +
+        "<td class=\"mono\">" + esc(file.worktree_status || "") + "</td>" +
+        "<td class=\"mono\">" + esc(file.original_path || "null") + "</td>" +
+      "</tr>"
+    ).join("") +
+  "</tbody></table></div>";
+}
+
+function renderWorkspaceCommits(commits) {
+  const rows = array(commits);
+  if (rows.length === 0) {
+    return "";
+  }
+
+  return "<div class=\"rows\">" + rows.map((commit) =>
+    "<article class=\"row-card\">" +
+      "<div><div class=\"item-title\"><span class=\"item-id\">" + esc(shortId(commit.sha || "")) + "</span><span>" + esc(commit.subject || "") + "</span></div>" +
+      "<p class=\"item-copy\">" + esc([commit.author_name, formatDateTime(commit.date)].filter(Boolean).join(" - ")) + "</p></div>" +
+    "</article>"
+  ).join("") + "</div>";
+}
+
+function renderWorkspaceDiff(diff) {
+  if (!diff || typeof diff !== "object") {
+    return panelState("Diff response was empty.", true);
+  }
+
+  const text = String(diff.text || "");
+  return "<div class=\"dispatch-output\">" +
+    "<div class=\"panel-head\"><h3 class=\"panel-title\">" + esc(diff.mode || "diff") + "</h3></div>" +
+    preBlock(text.trim().length > 0 ? text : "No tracked diff.") +
+  "</div>";
+}
+
+function isDispatchTerminal(status) {
+  return status === "succeeded" || status === "failed" || status === "canceled";
 }
 
 function renderTaskChunkTable(task, chunks, extras, review) {
@@ -1201,6 +1601,17 @@ function renderWriteActionStatus(actionKey) {
   "</p>";
 }
 
+function renderReadActionStatus(actionKey) {
+  const entry = state.read.actions.get(actionKey);
+  if (!entry) {
+    return "";
+  }
+
+  return "<p class=\"form-status form-status-" + esc(entry.status) + "\" role=\"" + (entry.status === "error" ? "alert" : "status") + "\">" +
+    esc(entry.message) +
+  "</p>";
+}
+
 function setWriteAction(actionKey, status, message) {
   const entry = {
     status,
@@ -1212,12 +1623,30 @@ function setWriteAction(actionKey, status, message) {
   state.write.last = entry;
 }
 
+function setReadAction(actionKey, status, message, body = null) {
+  state.read.actions.set(actionKey, {
+    status,
+    message,
+    body,
+    detailKey: routeKey(state.route),
+    updatedAt: Date.now()
+  });
+}
+
 function isWritePending(actionKey) {
   return state.write.actions.get(actionKey)?.status === "pending";
 }
 
+function isReadPending(actionKey) {
+  return state.read.actions.get(actionKey)?.status === "pending";
+}
+
 function writeActionKey(action, taskId, chunkId, extra = "") {
   return [action, taskId, chunkId, extra].filter((part) => String(part).length > 0).join(":");
+}
+
+function dispatchActionKey(action, runOrRef, extra = "") {
+  return [action, runOrRef, extra].filter((part) => String(part).length > 0).join(":");
 }
 
 function renderOptions(values, current) {

@@ -263,6 +263,14 @@
     @apply flex items-center justify-end gap-2;
   }
 
+  .checkbox-field {
+    @apply inline-flex min-h-8 items-center gap-2 text-sm font-medium text-neutral-700;
+  }
+
+  .checkbox-field input {
+    @apply h-4 w-4 rounded border-neutral-300 text-blue-700 focus:ring-blue-500;
+  }
+
   .form-status {
     @apply m-0 text-xs leading-relaxed;
     overflow-wrap: anywhere;
@@ -329,6 +337,14 @@
 
   .detail-json {
     @apply mt-2 max-h-72 rounded-md border border-neutral-200 bg-neutral-50;
+  }
+
+  .dispatch-review-stack {
+    @apply grid gap-3;
+  }
+
+  .dispatch-output {
+    @apply overflow-hidden rounded-md border border-neutral-200 bg-white;
   }
 
   .detail-copy {
