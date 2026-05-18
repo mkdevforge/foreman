@@ -35,7 +35,8 @@ test("renders overview data and filters without screenshot baselines", async ({ 
   await expect(page.getByTestId("load-state")).toHaveText("Loaded");
   await expect(page.locator("#metric-tasks")).toHaveText("2");
   await expect(page.locator("#metric-open-chunks")).toHaveText("2");
-  await expect(page.locator("#metric-blocked-chunks")).toHaveText("1");
+  await expect(page.locator("#metric-ready-chunks")).toHaveText("1");
+  await expect(page.locator("#metric-ready-note")).toHaveText("1 need attention");
   await expect(page.locator("#chunk-rows")).toContainText("TASK-1/ready-chunk");
   await expect(page.locator("#chunk-rows")).toContainText("TASK-1/blocked-chunk");
   await expect(page.locator("#dispatch-rows")).toContainText("TASK-1/blocked-chunk");

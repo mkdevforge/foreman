@@ -261,12 +261,13 @@ function render() {
   const filteredSessions = sessions.filter(matchesSessionSearch).slice(0, 8);
   const totalCost = Number(cost.overall?.total_cost_usd || 0);
   const openChunks = chunks.filter((chunk) => chunk.status !== "done");
-  const blockedChunks = chunks.filter((chunk) => getReadinessState(chunk) === "blocked");
+  const readyDispatchChunks = openChunks.filter((chunk) => getReadinessState(chunk) === "ready");
+  const needsAttentionChunks = openChunks.filter((chunk) => getReadinessState(chunk) === "blocked");
   const failures = Object.keys(state.errors);
 
   setText("rail-tasks", String(tasks.length));
   setText("rail-open-chunks", String(openChunks.length));
-  setText("rail-blocked-chunks", String(blockedChunks.length));
+  setText("rail-needs-attention", String(needsAttentionChunks.length));
   setText("rail-dispatch", String(dispatchRuns.length));
   setText("rail-sessions", String(sessions.length));
   setText("rail-cost", money(totalCost));
@@ -275,8 +276,8 @@ function render() {
   setText("metric-tasks-note", countByStatus(tasks));
   setText("metric-open-chunks", String(openChunks.length));
   setText("metric-open-note", chunks.length + " total chunks");
-  setText("metric-blocked-chunks", String(blockedChunks.length));
-  setText("metric-blocked-note", state.readinessLoading ? "Checking readiness" : readyCount(chunks) + " ready chunks");
+  setText("metric-ready-chunks", String(readyDispatchChunks.length));
+  setText("metric-ready-note", state.readinessLoading ? "Checking readiness" : dispatchReadinessNote(openChunks, needsAttentionChunks));
   setText("metric-dispatch", String(dispatchRuns.length));
   setText("metric-dispatch-note", dispatchRuns.length === 0 ? "No active runs" : countByStatus(dispatchRuns));
   setText("metric-sessions", String(sessions.length));
@@ -1242,8 +1243,11 @@ function readinessChip(readiness) {
   return chip("unknown", "muted");
 }
 
-function readyCount(chunks) {
-  return chunks.filter((chunk) => getReadinessState(chunk) === "ready").length;
+function dispatchReadinessNote(openChunks, needsAttentionChunks) {
+  if (openChunks.length === 0) {
+    return "No open chunks";
+  }
+  return needsAttentionChunks.length + " need attention";
 }
 
 function chunkKey(chunk) {

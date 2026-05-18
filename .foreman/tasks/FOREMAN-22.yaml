@@ -138,3 +138,7 @@ chunks:
         body: Implemented read-only hash-routed task, chunk, dispatch run, and session detail views; added
           question/decision UI bridge endpoints, cross-links, detail route browser coverage at
           desktop/mobile widths, and README UI route documentation.
+      - ts: 2026-05-18T14:04:54.000Z
+        body: Adjusted overview readiness metrics so completed chunks do not count as blocked; the
+          dashboard now reports open chunks, ready-to-dispatch open chunks, and open chunks needing
+          attention.
