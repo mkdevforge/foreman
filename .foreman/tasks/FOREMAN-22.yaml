@@ -24,8 +24,8 @@ chunks:
         - `task show <id> --json`
         - `chunk list <task> --json`
         - `chunk ready <task>/<chunk> --json`
-        - `review task <task> --json`
-        - `review chunk <task>/<chunk> --json`
+        - `review <task> --json`
+        - `review <task>/<chunk> --json`
         - `dispatch list --json`
         - `dispatch show <run-id-or-prefix> --json`
         - `session list --json`
