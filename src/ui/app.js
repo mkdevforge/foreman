@@ -323,8 +323,8 @@ function render() {
   const filteredSessions = sessions.filter(matchesSessionSearch).slice(0, 8);
   const totalCost = Number(cost.overall?.total_cost_usd || 0);
   const openChunks = chunks.filter((chunk) => chunk.status !== "done");
-  const readyDispatchChunks = openChunks.filter((chunk) => getReadinessState(chunk) === "ready");
-  const notDispatchableChunks = openChunks.filter((chunk) => getReadinessState(chunk) !== "ready");
+  const readyDispatchChunks = openChunks.filter((chunk) => getDispatchGateState(chunk) === "ready");
+  const notDispatchableChunks = openChunks.filter((chunk) => getDispatchGateState(chunk) !== "ready");
   const failures = Object.keys(state.errors);
 
   setText("rail-tasks", String(tasks.length));
@@ -1888,12 +1888,12 @@ function setOptions(id, label, values) {
 }
 
 function matchesChunkFilters(chunk) {
-  const readiness = getReadinessState(chunk);
+  const dispatchGate = getDispatchGateState(chunk);
   return matchesSearch([chunk.task.id, chunk.task.title, chunk.id, chunk.title, chunk.spec]) &&
     matchesValue(state.filters.taskStatus, chunk.task.status) &&
     matchesValue(state.filters.chunkStatus, chunk.status) &&
     matchesValue(state.filters.stage, chunk.stage) &&
-    matchesValue(state.filters.readiness, readiness);
+    matchesValue(state.filters.readiness, dispatchGate);
 }
 
 function matchesDispatchFilters(run) {
@@ -1926,7 +1926,7 @@ function sortChunks(chunks) {
       return (left.task.id + "/" + left.id).localeCompare(right.task.id + "/" + right.id);
     }
     if (state.sort.work === "readiness") {
-      return getReadinessState(left).localeCompare(getReadinessState(right));
+      return compareDispatchGateState(left, right);
     }
     return dateValue(right.updated_at || right.created_at) - dateValue(left.updated_at || left.created_at);
   });
@@ -1969,8 +1969,27 @@ function getReadiness(chunk) {
   };
 }
 
-function getReadinessState(chunk) {
-  return getReadiness(chunk).state;
+function getDispatchGateState(chunk) {
+  return dispatchGateState(chunk, getReadiness(chunk));
+}
+
+function dispatchGateState(chunk, readiness) {
+  if (chunk.status === "done") {
+    return "not_applicable";
+  }
+  if (readiness.state === "ready") {
+    return "ready";
+  }
+  if (readiness.state === "checking" || readiness.state === "error" || readiness.state === "unknown") {
+    return readiness.state;
+  }
+
+  const blockers = array(readiness.blockers);
+  const actionable = actionableDispatchGateBlockers(blockers);
+  if (actionable.length === 0 && blockers.some((blocker) => blocker.code === "missing_dispatch_metadata")) {
+    return "not_configured";
+  }
+  return "blocked";
 }
 
 function readinessFromPayload(payload) {
@@ -1980,22 +1999,6 @@ function readinessFromPayload(payload) {
     message: payload.ready ? "Dispatchable" : "Not dispatchable",
     blockers
   };
-}
-
-function readinessChip(readiness) {
-  if (readiness.state === "ready") {
-    return chip("dispatchable", "done");
-  }
-  if (readiness.state === "blocked") {
-    return chip(readiness.message || "not dispatchable", "failed");
-  }
-  if (readiness.state === "error") {
-    return chip("dispatch gate error", "failed");
-  }
-  if (readiness.state === "checking") {
-    return chip("checking", "warn");
-  }
-  return chip("unknown", "muted");
 }
 
 function dispatchReadinessNote(openChunks, notDispatchableChunks) {
@@ -2014,26 +2017,31 @@ function dispatchGateChip(chunk, readiness) {
 }
 
 function dispatchGateDetailMeta(chunk, readiness, blockers) {
-  if (chunk.status === "done") {
+  const state = dispatchGateState(chunk, readiness);
+  if (state === "not_applicable") {
     return "not applicable";
   }
-  if (readiness.state === "ready") {
+  if (state === "ready") {
     return "dispatchable";
   }
-  if (readiness.state === "checking") {
+  if (state === "not_configured") {
+    return "not configured";
+  }
+  if (state === "checking") {
     return "checking";
   }
-  if (readiness.state === "unknown") {
+  if (state === "unknown") {
     return "unknown";
   }
-  if (readiness.state === "error") {
+  if (state === "error") {
     return "error";
   }
   return blockers.length + " unmet requirement" + (blockers.length === 1 ? "" : "s");
 }
 
 function dispatchGateSummary(chunk, readiness) {
-  if (chunk.status === "done") {
+  const state = dispatchGateState(chunk, readiness);
+  if (state === "not_applicable") {
     return {
       label: "not applicable",
       tone: "muted",
@@ -2041,7 +2049,7 @@ function dispatchGateSummary(chunk, readiness) {
     };
   }
 
-  if (readiness.state === "ready") {
+  if (state === "ready") {
     return {
       label: "dispatchable",
       tone: "done",
@@ -2049,21 +2057,21 @@ function dispatchGateSummary(chunk, readiness) {
     };
   }
 
-  if (readiness.state === "checking") {
+  if (state === "checking") {
     return { label: "checking", tone: "warn", note: "" };
   }
 
-  if (readiness.state === "error") {
+  if (state === "error") {
     return { label: "gate error", tone: "failed", note: readiness.message || "Dispatch gate check failed." };
   }
 
-  if (readiness.state === "unknown") {
+  if (state === "unknown") {
     return { label: "unknown", tone: "muted", note: "" };
   }
 
   const blockers = array(readiness.blockers);
-  const actionable = blockers.filter((blocker) => blocker.code !== "missing_dispatch_metadata");
-  if (actionable.length === 0 && blockers.some((blocker) => blocker.code === "missing_dispatch_metadata")) {
+  const actionable = actionableDispatchGateBlockers(blockers);
+  if (state === "not_configured") {
     return {
       label: "not configured",
       tone: "warn",
@@ -2077,6 +2085,30 @@ function dispatchGateSummary(chunk, readiness) {
     tone: "failed",
     note: first?.message || "Dispatch gate has unmet requirements."
   };
+}
+
+function actionableDispatchGateBlockers(blockers) {
+  return array(blockers).filter((blocker) => blocker.code !== "missing_dispatch_metadata");
+}
+
+function compareDispatchGateState(left, right) {
+  const order = {
+    ready: 0,
+    not_configured: 1,
+    blocked: 2,
+    error: 3,
+    checking: 4,
+    unknown: 5,
+    not_applicable: 6
+  };
+  const leftState = getDispatchGateState(left);
+  const rightState = getDispatchGateState(right);
+  const leftRank = order[leftState] ?? 99;
+  const rightRank = order[rightState] ?? 99;
+  if (leftRank !== rightRank) {
+    return leftRank - rightRank;
+  }
+  return (left.task.id + "/" + left.id).localeCompare(right.task.id + "/" + right.id);
 }
 
 function chunkKey(chunk) {

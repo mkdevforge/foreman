@@ -54,6 +54,11 @@ test("renders overview data and filters without screenshot baselines", async ({ 
   await page.locator("#filter-readiness").selectOption("blocked");
   await expect(page.locator("#chunk-rows")).toContainText("TASK-1/blocked-chunk");
   await expect(page.locator("#chunk-rows")).not.toContainText("TASK-1/ready-chunk");
+  await expect(page.locator("#chunk-rows")).not.toContainText("TASK-2/done-chunk");
+
+  await page.locator("#filter-readiness").selectOption("not_applicable");
+  await expect(page.locator("#chunk-rows")).toContainText("TASK-2/done-chunk");
+  await expect(page.locator("#chunk-rows")).not.toContainText("TASK-1/blocked-chunk");
 
   await page.locator("#filter-readiness").selectOption("all");
   await page.locator("#filter-dispatch-status").evaluate((select) => {
@@ -450,7 +455,14 @@ function fixtureForPath(path: string, state = createFixtureState()): unknown {
   }
 
   if (path === "/api/readiness/TASK-2/done-chunk") {
-    return { schema_version: 1, task_id: "TASK-2", chunk_id: "done-chunk", ready: true, blockers: [], warnings: [] };
+    return {
+      schema_version: 1,
+      task_id: "TASK-2",
+      chunk_id: "done-chunk",
+      ready: false,
+      blockers: [{ code: "chunk_status_done", message: "chunk is already done", status: "done" }],
+      warnings: []
+    };
   }
 
   if (path === "/api/tasks/TASK-1") {

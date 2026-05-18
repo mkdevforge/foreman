@@ -5,7 +5,7 @@ source_ref: docs/backlog/future-dispatch-human-gates.md#ui-direction
 description: Add narrow local UI mutation flows on top of existing Foreman CLI JSON contracts.
 status: doing
 created_at: 2026-05-18T14:26:55.569Z
-updated_at: 2026-05-18T19:53:29.532Z
+updated_at: 2026-05-18T21:05:29.564Z
 chunks:
   - id: ui-write-bridge
     title: UI write bridge
@@ -131,7 +131,7 @@ chunks:
     status: review
     stage: implement
     created_at: 2026-05-18T14:26:55.748Z
-    updated_at: 2026-05-18T19:53:29.532Z
+    updated_at: 2026-05-18T21:05:29.564Z
     notes:
       - ts: 2026-05-18T19:07:04.598Z
         body: "Implemented dispatch UI controls on top of the CLI-backed bridge: chunk detail can start
@@ -146,3 +146,7 @@ chunks:
         body: "Rethought the UI terminology after review: treat readiness as the dispatch gate, separate
           work state chips from launch eligibility, and hide raw dispatch blockers from overview
           rows."
+      - ts: 2026-05-18T21:05:29.564Z
+        body: Fixed dispatch gate filtering to use the same derived categories as display. Done chunks now
+          filter as not applicable, missing dispatch metadata filters as not configured, and the
+          browser fixture mirrors backend done-chunk readiness blockers.
