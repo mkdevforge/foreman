@@ -175,6 +175,17 @@ When a launched child later triggers the Foreman Stop hook, the hook ingests the
 
 `foreman dispatch finish` explicitly marks a running dispatch attempt as `succeeded` or `failed`. Successful completion requires a Stop-hook captured session. Failed completion also requires a captured session by default, but `--allow-missing-session` permits `--status failed` when the launched process exited before hook capture; that path requires `--message` so the terminal event explains the no-session failure. The command records terminal timestamps and one terminal event. It does not infer completion from hook capture and still does not retry, cancel live processes, or clean up worktrees.
 
+## Local UI
+
+Start the read-only local web UI:
+
+```sh
+foreman ui
+foreman ui --host 127.0.0.1 --port 8787
+```
+
+By default, `foreman ui` binds to `127.0.0.1` on an OS-selected port and prints the local URL. The first UI slice is intentionally read-only: it serves a local web shell and exposes specific API endpoints backed by existing `foreman ... --json` commands. It does not query SQLite directly, run as a daemon, mutate tasks, start dispatch, merge, clean up, install hooks, or change Git state.
+
 ## Active Work Context
 
 Tell Foreman what task/chunk the next agent session should link to:
@@ -310,7 +321,7 @@ Stop hooks intentionally exit `0` after non-help execution, including parse and 
 ## Known v0 Limitations
 
 - Hook install is user-level only, not repo-local.
-- Search, tracker integrations, dispatch orchestration, MCP/Avalonia/TUI/web clients, and LLM-powered catalog suggestions are out of scope for v0.
+- Search, tracker integrations, write-capable UI flows, MCP/Avalonia/TUI clients, and LLM-powered catalog suggestions are out of scope for v0.
 - Session summaries depend on the configured local Claude Code/Codex harness and may be absent if summary generation fails.
 - `cost_usd` is an estimate, not a billing source of truth.
 - Catalog matching depends on stored `repo_remote` or exact `project_path`; it does not infer related worktrees without a shared remote.

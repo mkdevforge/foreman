@@ -115,6 +115,7 @@ import {
 } from "../store/schema";
 import type { ChunkReadinessIssue, ChunkReadinessReport } from "../store/task-store";
 import { installForemanHooks, parseInstallTool } from "../hook/install";
+import { parseUiHost, parseUiPort, startForemanUiServer } from "../ui/server";
 
 export type WriteFn = (text: string) => void;
 
@@ -323,6 +324,29 @@ function createProgram(json: boolean, io: CliIo): Command {
       const status = getActiveContextStatus();
 
       writeData(json, io, renderActiveStatus(status), toJsonActiveStatus(status));
+    });
+
+  program
+    .command("ui")
+    .description("Start the local read-only Foreman web UI.")
+    .option("--host <host>", "host to bind, default 127.0.0.1")
+    .option("--port <port>", "port to bind, default 0")
+    .action((options: { host?: string; port?: string }) => {
+      const repoRoot = findRepoRoot();
+      const server = startForemanUiServer({
+        repoRoot,
+        host: parseUiHost(options.host),
+        port: parseUiPort(options.port)
+      });
+
+      writeData(json, io, `Foreman UI listening on ${server.url}\n`, {
+        ui: {
+          url: server.url,
+          host: server.host,
+          port: server.port,
+          repo_root: repoRoot
+        }
+      });
     });
 
   program.addCommand(createReviewCommand(json, io));
