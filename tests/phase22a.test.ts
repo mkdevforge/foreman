@@ -74,6 +74,8 @@ describe("Phase 22a read-only UI server", () => {
     await fetchJson(server, "/api/tasks/FOREMAN-22");
     await fetchJson(server, "/api/chunks/FOREMAN-22");
     await fetchJson(server, "/api/readiness/FOREMAN-22/ui-readonly-server");
+    await fetchJson(server, "/api/questions/FOREMAN-22/ui-readonly-server");
+    await fetchJson(server, "/api/decisions/FOREMAN-22/ui-readonly-server");
     await fetchJson(server, "/api/reviews/FOREMAN-22");
     await fetchJson(server, "/api/reviews/FOREMAN-22/ui-readonly-server");
     await fetchJson(server, "/api/dispatch-runs");
@@ -86,6 +88,8 @@ describe("Phase 22a read-only UI server", () => {
       ["task", "show", "FOREMAN-22", "--json"],
       ["chunk", "list", "FOREMAN-22", "--json"],
       ["chunk", "ready", "FOREMAN-22/ui-readonly-server", "--json"],
+      ["question", "list", "FOREMAN-22/ui-readonly-server", "--json"],
+      ["decision", "list", "FOREMAN-22/ui-readonly-server", "--json"],
       ["review", "FOREMAN-22", "--json"],
       ["review", "FOREMAN-22/ui-readonly-server", "--json"],
       ["dispatch", "list", "--json"],

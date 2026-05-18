@@ -5,7 +5,7 @@ source_ref: docs/dispatch-run-model.md#ui-contract
 description: Build the first read-only local Foreman UI on top of existing CLI JSON contracts.
 status: todo
 created_at: 2026-05-17T23:38:18.700Z
-updated_at: 2026-05-18T09:37:07.326Z
+updated_at: 2026-05-18T13:55:35.975Z
 chunks:
   - id: ui-readonly-server
     title: Read-only UI server
@@ -129,8 +129,12 @@ chunks:
       - The local UI can replace the common read-only inspection workflow for tasks, chunks,
         dispatch runs, attempts, sessions, costs, and audit timelines.
       - Remaining write flows are explicit future work instead of hidden half-controls.
-    status: todo
-    stage: plan
+    status: done
+    stage: implement
     created_at: 2026-05-17T23:38:18.851Z
-    updated_at: 2026-05-17T23:39:05.252Z
-    notes: []
+    updated_at: 2026-05-18T13:55:35.975Z
+    notes:
+      - ts: 2026-05-18T13:55:35.975Z
+        body: Implemented read-only hash-routed task, chunk, dispatch run, and session detail views; added
+          question/decision UI bridge endpoints, cross-links, detail route browser coverage at
+          desktop/mobile widths, and README UI route documentation.

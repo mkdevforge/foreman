@@ -13,6 +13,13 @@ const state = {
   readiness: new Map(),
   readinessLoading: false,
   loadedAt: null,
+  route: parseRoute(),
+  detail: {
+    key: "overview",
+    loading: false,
+    data: null,
+    error: null
+  },
   filters: {
     search: "",
     taskStatus: "all",
@@ -32,6 +39,11 @@ window.__foremanUiState = state;
 
 document.addEventListener("DOMContentLoaded", () => {
   bindControls();
+  window.addEventListener("hashchange", () => {
+    state.route = parseRoute();
+    renderRoute();
+    void loadRouteDetail();
+  });
   loadForemanData();
   setInterval(renderStaleState, 30_000);
 });
@@ -76,6 +88,7 @@ async function loadForemanData() {
   state.errors = {};
   state.readiness = new Map();
   state.readinessLoading = false;
+  state.detail = { key: "", loading: false, data: null, error: null };
   renderLoadingState();
 
   const entries = await Promise.allSettled(
@@ -107,6 +120,8 @@ async function loadForemanData() {
     state.readinessLoading = false;
     render();
   }
+
+  await loadRouteDetail();
 }
 
 async function fetchJson(path) {
@@ -171,12 +186,28 @@ function validatePayload(key, body) {
     throw payloadError(key, "Malformed tasks response: expected tasks array.");
   }
 
+  if (key === "task" && (!body.task || typeof body.task !== "object")) {
+    throw payloadError(key, "Malformed task response: expected task object.");
+  }
+
+  if (key === "chunks" && !Array.isArray(body.chunks)) {
+    throw payloadError(key, "Malformed chunks response: expected chunks array.");
+  }
+
   if (key === "dispatchRuns" && !Array.isArray(body.dispatch_runs) && !Array.isArray(body.runs)) {
     throw payloadError(key, "Malformed dispatch response: expected dispatch_runs array.");
   }
 
+  if (key === "dispatchRun" && (!body.dispatch_run || typeof body.dispatch_run !== "object")) {
+    throw payloadError(key, "Malformed dispatch run response: expected dispatch_run object.");
+  }
+
   if (key === "sessions" && !Array.isArray(body.sessions)) {
     throw payloadError(key, "Malformed sessions response: expected sessions array.");
+  }
+
+  if (key === "session" && body.session !== null && (!body.session || typeof body.session !== "object")) {
+    throw payloadError(key, "Malformed session response: expected session object.");
   }
 
   if (key === "costs" && (!body.cost || typeof body.cost !== "object")) {
@@ -185,6 +216,18 @@ function validatePayload(key, body) {
 
   if (key === "readiness" && typeof body.ready !== "boolean") {
     throw payloadError(key, "Malformed readiness response: expected ready boolean.");
+  }
+
+  if (key === "review" && (!body.review || typeof body.review !== "object")) {
+    throw payloadError(key, "Malformed review response: expected review object.");
+  }
+
+  if (key === "questions" && !Array.isArray(body.questions)) {
+    throw payloadError(key, "Malformed questions response: expected questions array.");
+  }
+
+  if (key === "decisions" && !Array.isArray(body.decisions)) {
+    throw payloadError(key, "Malformed decisions response: expected decisions array.");
   }
 
   return body;
@@ -257,6 +300,7 @@ function render() {
   }
   renderSectionErrors();
   renderStaleState();
+  renderRoute();
 }
 
 function renderChunks(chunks) {
@@ -274,7 +318,7 @@ function renderChunks(chunks) {
     const description = chunk.spec ? firstLine(chunk.spec) : chunk.title || "";
     return "<tr>" +
       "<td>" +
-        "<div class=\"item-title\"><span class=\"item-id\">" + esc(chunk.task.id + "/" + chunk.id) + "</span><span>" + esc(chunk.title || "Untitled chunk") + "</span></div>" +
+        "<div class=\"item-title\"><a class=\"item-id detail-link\" href=\"" + routeHref(["chunk", chunk.task.id, chunk.id]) + "\">" + esc(chunk.task.id + "/" + chunk.id) + "</a><span>" + esc(chunk.title || "Untitled chunk") + "</span></div>" +
         "<p class=\"item-copy\">" + esc(description) + "</p>" +
         (blockers.length > 0 ? "<p class=\"item-copy\">" + esc(blockers.slice(0, 2).join("; ")) + "</p>" : "") +
       "</td>" +
@@ -300,7 +344,7 @@ function renderDispatchRuns(dispatchRuns) {
     const title = [run.task_id, run.chunk_id].filter(Boolean).join("/") || run.id || "Dispatch run";
     return "<tr>" +
       "<td>" +
-        "<div class=\"item-title\"><span class=\"item-id\">" + esc(shortId(run.id)) + "</span><span>" + esc(title) + "</span></div>" +
+        "<div class=\"item-title\"><a class=\"item-id detail-link\" href=\"" + routeHref(["dispatch", run.id]) + "\">" + esc(shortId(run.id)) + "</a><span>" + esc(title) + "</span></div>" +
         "<p class=\"item-copy\">" + esc(lastEvent(run) || run.repo_name || "") + "</p>" +
       "</td>" +
       "<td>" + chip(run.status || "unknown", run.status) + "</td>" +
@@ -324,8 +368,8 @@ function renderSessions(sessions) {
     const title = [session.source, session.model].filter(Boolean).join(" - ");
     return "<article class=\"row-card\">" +
       "<div>" +
-        "<div class=\"item-title\"><span class=\"item-id\">" + esc(shortId(session.id)) + "</span><span>" + esc(title || "Session") + "</span></div>" +
-        "<p class=\"item-copy\">" + esc(linked || session.project_path || "Unlinked") + "</p>" +
+        "<div class=\"item-title\"><a class=\"item-id detail-link\" href=\"" + routeHref(["session", session.id]) + "\">" + esc(shortId(session.id)) + "</a><span>" + esc(title || "Session") + "</span></div>" +
+        "<p class=\"item-copy\">" + (linked ? renderInlineChunkLinks(array(session.linked_chunks)) : esc(session.project_path || "Unlinked")) + "</p>" +
       "</div>" +
       "<div class=\"chips\">" + chip(formatCost(session.usage?.cost_usd), "active") + chip(formatDate(session.ended_at || session.started_at), "done") + "</div>" +
     "</article>";
@@ -348,6 +392,696 @@ function renderCosts(cost) {
       return "<tr><td>" + esc(label) + "</td><td>" + esc(group.session_count || 0) + "</td><td class=\"mono\">" + esc(money(Number(group.total_cost_usd || 0))) + "</td></tr>";
     }).join("") +
   "</tbody></table></div>";
+}
+
+async function loadRouteDetail() {
+  const route = state.route;
+  const key = routeKey(route);
+
+  if (route.kind === "overview" || route.kind === "unknown") {
+    state.detail = { key, loading: false, data: null, error: null };
+    renderRoute();
+    return;
+  }
+
+  if (state.detail.key === key && (state.detail.loading || state.detail.data || state.detail.error)) {
+    return;
+  }
+
+  state.detail = { key, loading: true, data: null, error: null };
+  renderRoute();
+
+  try {
+    const data = await fetchRouteDetail(route);
+    if (routeKey(state.route) !== key) {
+      return;
+    }
+    state.detail = { key, loading: false, data, error: null };
+  } catch (error) {
+    if (routeKey(state.route) !== key) {
+      return;
+    }
+    state.detail = { key, loading: false, data: null, error };
+  }
+
+  renderRoute();
+}
+
+async function fetchRouteDetail(route) {
+  if (route.kind === "task") {
+    const taskPayload = await fetchValidated("task", apiPath(["tasks", route.taskId]));
+    const reviewPayload = await fetchValidated("review", apiPath(["reviews", route.taskId]));
+    const task = taskPayload.task;
+    const extras = await loadChunkExtras(task.id, array(task.chunks));
+    return { kind: "task", task, review: reviewPayload.review, extras };
+  }
+
+  if (route.kind === "chunk") {
+    const [taskPayload, chunksPayload, readinessPayload, reviewPayload, questionsPayload, decisionsPayload] = await Promise.all([
+      fetchValidated("task", apiPath(["tasks", route.taskId])),
+      fetchValidated("chunks", apiPath(["chunks", route.taskId])),
+      fetchValidated("readiness", apiPath(["readiness", route.taskId, route.chunkId])),
+      fetchValidated("review", apiPath(["reviews", route.taskId, route.chunkId])),
+      fetchValidated("questions", apiPath(["questions", route.taskId, route.chunkId])),
+      fetchValidated("decisions", apiPath(["decisions", route.taskId, route.chunkId]))
+    ]);
+    const chunk =
+      array(chunksPayload.chunks).find((candidate) => candidate.id === route.chunkId) ||
+      array(taskPayload.task.chunks).find((candidate) => candidate.id === route.chunkId) ||
+      null;
+
+    if (chunk === null) {
+      throw payloadError("chunks", "Malformed chunk detail: chunk is missing from task chunk list.");
+    }
+
+    return {
+      kind: "chunk",
+      task: taskPayload.task,
+      chunk,
+      readiness: readinessFromPayload(readinessPayload),
+      readinessPayload,
+      review: reviewPayload.review,
+      questions: questionsPayload.questions,
+      decisions: decisionsPayload.decisions
+    };
+  }
+
+  if (route.kind === "dispatch") {
+    const payload = await fetchValidated("dispatchRun", apiPath(["dispatch-runs", route.runId]));
+    return { kind: "dispatch", dispatchRun: payload.dispatch_run };
+  }
+
+  if (route.kind === "session") {
+    const payload = await fetchValidated("session", apiPath(["sessions", route.sessionId]));
+    return { kind: "session", session: payload.session };
+  }
+
+  return null;
+}
+
+async function fetchValidated(key, path) {
+  return validatePayload(key, await fetchJson(path));
+}
+
+async function loadChunkExtras(taskId, chunks) {
+  const entries = await Promise.all(
+    chunks.map(async (chunk) => {
+      const [readinessPayload, questionsPayload, decisionsPayload] = await Promise.all([
+        fetchValidated("readiness", apiPath(["readiness", taskId, chunk.id])),
+        fetchValidated("questions", apiPath(["questions", taskId, chunk.id])),
+        fetchValidated("decisions", apiPath(["decisions", taskId, chunk.id]))
+      ]);
+      return [
+        chunk.id,
+        {
+          readiness: readinessFromPayload(readinessPayload),
+          questions: questionsPayload.questions,
+          decisions: decisionsPayload.decisions
+        }
+      ];
+    })
+  );
+
+  return new Map(entries);
+}
+
+function renderRoute() {
+  const overview = byId("overview-view");
+  const detail = byId("detail-view");
+  if (!overview || !detail) {
+    return;
+  }
+
+  const route = state.route;
+  const isOverview = route.kind === "overview";
+  overview.classList.toggle("hidden", !isOverview);
+  detail.classList.toggle("hidden", isOverview);
+
+  if (isOverview) {
+    setText("page-title", "Work Backlog");
+    return;
+  }
+
+  if (route.kind === "unknown") {
+    setText("page-title", "Unknown View");
+    detail.innerHTML = detailHeader("Navigation", "Unknown view", "", "") + detailPanel("Route", "", panelState("No read-only view exists for this route.", true));
+    return;
+  }
+
+  const key = routeKey(route);
+  if (state.detail.key !== key || state.detail.loading) {
+    setText("page-title", routeTitle(route));
+    detail.innerHTML = detailHeader("Loading", routeTitle(route), "", "") + detailPanel("Detail", "", panelState("Loading"));
+    return;
+  }
+
+  if (state.detail.error) {
+    setText("page-title", routeTitle(route));
+    detail.innerHTML =
+      detailHeader("Error", routeTitle(route), "", "") +
+      detailPanel("Detail", "", panelState(readErrorText(state.detail.error), true));
+    return;
+  }
+
+  if (state.detail.data?.kind === "task") {
+    setText("page-title", "Task Detail");
+    detail.innerHTML = renderTaskDetail(state.detail.data);
+    return;
+  }
+
+  if (state.detail.data?.kind === "chunk") {
+    setText("page-title", "Chunk Detail");
+    detail.innerHTML = renderChunkDetail(state.detail.data);
+    return;
+  }
+
+  if (state.detail.data?.kind === "dispatch") {
+    setText("page-title", "Dispatch Detail");
+    detail.innerHTML = renderDispatchDetail(state.detail.data);
+    return;
+  }
+
+  if (state.detail.data?.kind === "session") {
+    setText("page-title", "Session Detail");
+    detail.innerHTML = renderSessionDetail(state.detail.data);
+  }
+}
+
+function renderTaskDetail(data) {
+  const task = data.task;
+  const chunks = array(task.chunks);
+  const dispatchRuns = matchingDispatchRuns(task.id, null);
+  const linkedEntries = array(data.review?.linked_sessions);
+  const openQuestionCount = chunks.reduce((count, chunk) => count + array(data.extras.get(chunk.id)?.questions).filter((question) => question.status === "open").length, 0);
+  const decisionCount = chunks.reduce((count, chunk) => count + array(data.extras.get(chunk.id)?.decisions).length, 0);
+
+  return detailHeader(
+    "Task",
+    task.id + " - " + (task.title || "Untitled task"),
+    chip(task.status || "unknown", task.status),
+    esc(task.description || "")
+  ) +
+    "<div class=\"detail-grid\">" +
+      detailPanel("Task State", "", keyGrid([
+        ["Full task id", task.id],
+        ["Source", task.source_ref || "null"],
+        ["Updated", formatDateTime(task.updated_at)],
+        ["Created", formatDateTime(task.created_at)],
+        ["Linked sessions", data.review?.total_linked_sessions ?? 0],
+        ["Linked cost", money(Number(data.review?.total_cost_usd || 0))]
+      ])) +
+      detailPanel("Chunks", chunks.length + " total", renderTaskChunkTable(task, chunks, data.extras, data.review)) +
+      detailPanel("Open Questions", String(openQuestionCount), renderQuestionsByChunk(task, chunks, data.extras, true)) +
+      detailPanel("Accepted Decisions", String(decisionCount), renderDecisionsByChunk(task, chunks, data.extras)) +
+      detailPanel("Dispatch Runs", String(dispatchRuns.length), renderDispatchRunTable(dispatchRuns)) +
+      detailPanel("Linked Sessions", String(linkedEntries.length), renderLinkedSessionEntries(linkedEntries)) +
+    "</div>";
+}
+
+function renderChunkDetail(data) {
+  const ref = data.task.id + "/" + data.chunk.id;
+  const dispatchRuns = matchingDispatchRuns(data.task.id, data.chunk.id);
+  const linkedEntries = array(data.review?.linked_sessions_by_stage).flatMap((group) => array(group.sessions));
+  const blockers = array(data.readinessPayload.blockers);
+  const warnings = array(data.readinessPayload.warnings);
+
+  return detailHeader(
+    "Chunk",
+    ref + " - " + (data.chunk.title || "Untitled chunk"),
+    chip(data.chunk.status || "unknown", data.chunk.status) + chip(data.chunk.stage || "stage unset", data.chunk.stage) + readinessChip(data.readiness),
+    linkToTask(data.task.id, data.task.title || data.task.id)
+  ) +
+    "<div class=\"detail-grid\">" +
+      detailPanel("Chunk State", "", keyGrid([
+        ["Full chunk ref", ref],
+        ["Updated", formatDateTime(data.chunk.updated_at)],
+        ["Created", formatDateTime(data.chunk.created_at)],
+        ["Linked cost", money(Number(data.review?.total_cost_usd || 0))],
+        ["Dispatch runs", dispatchRuns.length]
+      ])) +
+      detailPanel("Spec", "", preBlock(data.chunk.spec || "No spec."), "detail-panel-wide") +
+      detailPanel("Readiness", blockers.length + " blockers", renderReadinessDetail(data.readiness, blockers, warnings)) +
+      detailPanel("Open Questions", String(array(data.questions).filter((question) => question.status === "open").length), renderQuestionList(data.questions)) +
+      detailPanel("Accepted Decisions", String(array(data.decisions).length), renderDecisionList(data.decisions)) +
+      detailPanel("Linked Sessions", String(linkedEntries.length), renderLinkedSessionEntries(linkedEntries)) +
+      detailPanel("Dispatch Runs", String(dispatchRuns.length), renderDispatchRunTable(dispatchRuns)) +
+      detailPanel("Notes", String(array(data.chunk.notes).length), renderNotes(data.chunk.notes)) +
+    "</div>";
+}
+
+function renderDispatchDetail(data) {
+  const run = data.dispatchRun;
+  const attempts = array(run.attempts);
+  const events = array(run.events);
+  const taskChunkLink = run.task_id && run.chunk_id ? linkToChunk(run.task_id, run.chunk_id, run.task_id + "/" + run.chunk_id) : "";
+
+  return detailHeader(
+    "Dispatch Run",
+    run.id,
+    chip(run.status || "unknown", run.status) + chip(run.requested_stage || "stage unset", run.requested_stage),
+    taskChunkLink
+  ) +
+    "<div class=\"detail-grid\">" +
+      detailPanel("Run State", "", keyGrid([
+        ["Full run id", run.id],
+        ["Repo", run.repo_name || "null"],
+        ["Task", run.task_id ? htmlValue(linkToTask(run.task_id, run.task_id)) : "null"],
+        ["Chunk", taskChunkLink ? htmlValue(taskChunkLink) : "null"],
+        ["Requested by", run.requested_by || "null"],
+        ["Source", run.source || "null"],
+        ["Created", formatDateTime(run.created_at)],
+        ["Updated", formatDateTime(run.updated_at)],
+        ["Finished", formatDateTime(run.finished_at)]
+      ])) +
+      detailPanel("Attempts", String(attempts.length), renderAttempts(attempts), "detail-panel-wide") +
+      detailPanel("Event Timeline", String(events.length), renderEvents(events), "detail-panel-wide") +
+    "</div>";
+}
+
+function renderSessionDetail(data) {
+  const session = data.session;
+  if (session === null) {
+    return detailHeader("Session", "Missing session", "", "") + detailPanel("Session", "", panelState("No session found.", true));
+  }
+
+  return detailHeader(
+    "Session",
+    session.id,
+    chip(session.source || "unknown", session.source) + chip(session.model || "model unset", "active"),
+    renderInlineChunkLinks(array(session.linked_chunks))
+  ) +
+    "<div class=\"detail-grid\">" +
+      detailPanel("Session State", "", keyGrid([
+        ["Full session id", session.id],
+        ["Source session id", session.source_session_id || "null"],
+        ["Source", session.source || "null"],
+        ["Model", session.model || "null"],
+        ["Project path", session.project_path || "null"],
+        ["Repo remote", session.repo_remote || "null"],
+        ["Machine", session.machine || "null"],
+        ["Started", formatDateTime(session.started_at)],
+        ["Ended", formatDateTime(session.ended_at)],
+        ["Created", formatDateTime(session.created_at)]
+      ]), "detail-panel-wide") +
+      detailPanel("Usage", "", renderUsage(session.usage)) +
+      detailPanel("Linked Chunks", String(array(session.linked_chunks).length), renderSessionChunkLinks(session.linked_chunks)) +
+      detailPanel("Summary", session.summary?.model_used || "", preBlock(session.summary?.summary_md || "No summary."), "detail-panel-wide") +
+    "</div>";
+}
+
+function renderTaskChunkTable(task, chunks, extras, review) {
+  if (chunks.length === 0) {
+    return panelState("No chunks found.");
+  }
+
+  return "<div class=\"table-scroll\"><table class=\"data-table detail-table\"><thead><tr><th>Chunk</th><th>Status</th><th>Readiness</th><th>Questions</th><th>Decisions</th><th>Sessions</th><th>Cost</th></tr></thead><tbody>" +
+    chunks.map((chunk) => {
+      const extra = extras.get(chunk.id) || { readiness: { state: "unknown", message: "Unknown", blockers: [] }, questions: [], decisions: [] };
+      const rollup = taskReviewRollup(review, chunk.id);
+      const openQuestions = array(extra.questions).filter((question) => question.status === "open").length;
+      return "<tr>" +
+        "<td><div class=\"item-title\">" + linkToChunk(task.id, chunk.id, task.id + "/" + chunk.id) + "<span>" + esc(chunk.title || "Untitled chunk") + "</span></div></td>" +
+        "<td><div class=\"meta-line\">" + chip(chunk.status || "unknown", chunk.status) + chip(chunk.stage || "stage unset", chunk.stage) + "</div></td>" +
+        "<td>" + readinessChip(extra.readiness) + "</td>" +
+        "<td class=\"mono\">" + esc(openQuestions + " open / " + array(extra.questions).length + " total") + "</td>" +
+        "<td class=\"mono\">" + esc(array(extra.decisions).length) + "</td>" +
+        "<td class=\"mono\">" + esc(rollup?.linked_session_count ?? 0) + "</td>" +
+        "<td class=\"mono\">" + esc(money(Number(rollup?.total_cost_usd || 0))) + "</td>" +
+      "</tr>";
+    }).join("") +
+  "</tbody></table></div>";
+}
+
+function renderQuestionsByChunk(task, chunks, extras, openOnly) {
+  const rows = chunks.flatMap((chunk) => {
+    const questions = array(extras.get(chunk.id)?.questions).filter((question) => !openOnly || question.status === "open");
+    return questions.map((question) => ({ chunk, question }));
+  });
+
+  if (rows.length === 0) {
+    return panelState(openOnly ? "No open questions." : "No questions.");
+  }
+
+  return rows.map(({ chunk, question }) =>
+    "<article class=\"row-card\">" +
+      "<div>" +
+        "<div class=\"item-title\">" + linkToChunk(task.id, chunk.id, task.id + "/" + chunk.id) + "<span>" + esc(question.id) + "</span></div>" +
+        "<p class=\"item-copy\">" + esc(question.body) + "</p>" +
+        (question.answer ? "<p class=\"item-copy\">" + esc(question.answer) + "</p>" : "") +
+      "</div>" +
+      "<div class=\"chips\">" + chip(question.status || "unknown", question.status) + "</div>" +
+    "</article>"
+  ).join("");
+}
+
+function renderDecisionsByChunk(task, chunks, extras) {
+  const rows = chunks.flatMap((chunk) => array(extras.get(chunk.id)?.decisions).map((decision) => ({ chunk, decision })));
+  if (rows.length === 0) {
+    return panelState("No accepted decisions.");
+  }
+
+  return rows.map(({ chunk, decision }) =>
+    "<article class=\"row-card\">" +
+      "<div>" +
+        "<div class=\"item-title\">" + linkToChunk(task.id, chunk.id, task.id + "/" + chunk.id) + "<span>" + esc(decision.id) + "</span></div>" +
+        "<p class=\"item-copy\">" + esc(decision.body) + "</p>" +
+      "</div>" +
+      "<div class=\"chips\">" + chip(formatDate(decision.decided_at), "done") + "</div>" +
+    "</article>"
+  ).join("");
+}
+
+function renderQuestionList(questions) {
+  const rows = array(questions);
+  if (rows.length === 0) {
+    return panelState("No questions.");
+  }
+
+  return rows.map((question) =>
+    "<article class=\"row-card\">" +
+      "<div>" +
+        "<div class=\"item-title\"><span class=\"item-id\">" + esc(question.id) + "</span><span>" + esc(question.status || "unknown") + "</span></div>" +
+        "<p class=\"item-copy\">" + esc(question.body) + "</p>" +
+        (question.answer ? "<p class=\"item-copy\">" + esc(question.answer) + "</p>" : "") +
+      "</div>" +
+      "<div class=\"chips\">" + chip(question.status || "unknown", question.status) + chip(formatDate(question.answered_at || question.asked_at), question.status) + "</div>" +
+    "</article>"
+  ).join("");
+}
+
+function renderDecisionList(decisions) {
+  const rows = array(decisions);
+  if (rows.length === 0) {
+    return panelState("No accepted decisions.");
+  }
+
+  return rows.map((decision) =>
+    "<article class=\"row-card\">" +
+      "<div>" +
+        "<div class=\"item-title\"><span class=\"item-id\">" + esc(decision.id) + "</span><span>Accepted</span></div>" +
+        "<p class=\"item-copy\">" + esc(decision.body) + "</p>" +
+      "</div>" +
+      "<div class=\"chips\">" + chip(formatDate(decision.decided_at), "done") + "</div>" +
+    "</article>"
+  ).join("");
+}
+
+function renderReadinessDetail(readiness, blockers, warnings) {
+  const blockerRows = blockers.map((blocker) => "<li><span class=\"item-id\">" + esc(blocker.code || "blocker") + "</span> " + esc(blocker.message || "") + "</li>");
+  const warningRows = warnings.map((warning) => "<li><span class=\"item-id\">" + esc(warning.code || "warning") + "</span> " + esc(warning.message || "") + "</li>");
+  return "<div class=\"detail-copy\">" +
+    "<div class=\"chips\">" + readinessChip(readiness) + "</div>" +
+    (blockerRows.length === 0 ? "<p class=\"item-copy\">No blockers.</p>" : "<ul class=\"detail-list\">" + blockerRows.join("") + "</ul>") +
+    (warningRows.length === 0 ? "" : "<p class=\"detail-subtitle\">Warnings</p><ul class=\"detail-list\">" + warningRows.join("") + "</ul>") +
+  "</div>";
+}
+
+function renderLinkedSessionEntries(entries) {
+  const rows = array(entries);
+  if (rows.length === 0) {
+    return panelState("No linked sessions.");
+  }
+
+  return rows.map((entry) => {
+    const session = entry.session || {};
+    const link = entry.link || {};
+    return "<article class=\"row-card\">" +
+      "<div>" +
+        "<div class=\"item-title\">" + linkToSession(session.id, session.id || "missing session") + "<span>" + esc([session.source, session.model].filter(Boolean).join(" - ") || "Session") + "</span></div>" +
+        "<p class=\"item-copy\">" + esc(session.summary?.summary_md ? firstLine(session.summary.summary_md) : session.project_path || "") + "</p>" +
+      "</div>" +
+      "<div class=\"chips\">" + chip(link.stage || "stage unset", link.stage) + chip(formatCost(session.usage?.cost_usd), "active") + chip(formatDate(session.ended_at || session.started_at), "done") + "</div>" +
+    "</article>";
+  }).join("");
+}
+
+function renderDispatchRunTable(runs) {
+  const rows = array(runs);
+  if (rows.length === 0) {
+    return panelState("No dispatch runs.");
+  }
+
+  return "<div class=\"table-scroll\"><table class=\"data-table detail-table\"><thead><tr><th>Run</th><th>Status</th><th>Tool</th><th>Session</th><th>Updated</th></tr></thead><tbody>" +
+    rows.map((run) => {
+      const attempt = array(run.attempts)[0] || {};
+      const sessionId = attempt.session_id || attempt.session?.id || "";
+      return "<tr>" +
+        "<td>" + linkToDispatch(run.id, run.id) + "<p class=\"item-copy\">" + esc(lastEvent(run) || "") + "</p></td>" +
+        "<td>" + chip(run.status || "unknown", run.status) + "</td>" +
+        "<td>" + chip(run.tool || attempt.tool || "tool unset", run.tool || attempt.tool) + "</td>" +
+        "<td>" + (sessionId ? linkToSession(sessionId, shortId(sessionId)) : esc("null")) + "</td>" +
+        "<td class=\"mono\">" + esc(formatDateTime(run.updated_at || run.created_at)) + "</td>" +
+      "</tr>";
+    }).join("") +
+  "</tbody></table></div>";
+}
+
+function renderAttempts(attempts) {
+  const rows = array(attempts);
+  if (rows.length === 0) {
+    return panelState("No attempts.");
+  }
+
+  return "<div class=\"table-scroll\"><table class=\"data-table detail-table\"><thead><tr><th>Attempt</th><th>Status</th><th>Tool</th><th>Workspace</th><th>Process</th><th>Session</th></tr></thead><tbody>" +
+    rows.map((attempt) => {
+      const sessionId = attempt.session_id || attempt.session?.id || "";
+      return "<tr>" +
+        "<td><span class=\"item-id\">" + esc(attempt.id) + "</span><p class=\"item-copy\">#" + esc(attempt.attempt_number ?? "") + "</p></td>" +
+        "<td>" + chip(attempt.status || "unknown", attempt.status) + "</td>" +
+        "<td>" + chip(attempt.tool || "tool unset", attempt.tool) + "</td>" +
+        "<td><div class=\"mono detail-path\">" + esc(attempt.workspace_path || "null") + "</div><p class=\"item-copy\">" + esc(attempt.worktree_branch || "branch unset") + "</p></td>" +
+        "<td class=\"mono\">" + esc(attempt.process_id ?? "null") + "</td>" +
+        "<td>" + (sessionId ? linkToSession(sessionId, sessionId) : esc("null")) + "</td>" +
+      "</tr>";
+    }).join("") +
+  "</tbody></table></div>";
+}
+
+function renderEvents(events) {
+  const rows = array(events);
+  if (rows.length === 0) {
+    return panelState("No events.");
+  }
+
+  return "<ol class=\"timeline\">" + rows.map((event) =>
+    "<li>" +
+      "<div class=\"timeline-dot\"></div>" +
+      "<div class=\"timeline-body\">" +
+        "<div class=\"item-title\"><span class=\"item-id\">" + esc(event.type || "event") + "</span><span>" + esc(formatDateTime(event.ts)) + "</span></div>" +
+        "<p class=\"item-copy\">" + esc(event.message || "") + "</p>" +
+        (event.attempt_id ? "<p class=\"item-copy\">Attempt " + esc(event.attempt_id) + "</p>" : "") +
+        renderEventData(event) +
+      "</div>" +
+    "</li>"
+  ).join("") + "</ol>";
+}
+
+function renderEventData(event) {
+  if (!event.data_json) {
+    return "";
+  }
+  const parsed = parseMaybeJson(event.data_json);
+  const body = parsed === null ? String(event.data_json) : JSON.stringify(parsed, null, 2);
+  return "<pre class=\"detail-json\">" + esc(body) + "</pre>";
+}
+
+function renderNotes(notes) {
+  const rows = array(notes);
+  if (rows.length === 0) {
+    return panelState("No notes.");
+  }
+
+  return rows.map((note) =>
+    "<article class=\"row-card\"><div><div class=\"item-title\"><span>" + esc(formatDateTime(note.ts)) + "</span></div><p class=\"item-copy\">" + esc(note.body) + "</p></div></article>"
+  ).join("");
+}
+
+function renderUsage(usage) {
+  if (!usage) {
+    return panelState("No usage data.");
+  }
+
+  return keyGrid([
+    ["Input tokens", usage.input_tokens ?? 0],
+    ["Output tokens", usage.output_tokens ?? 0],
+    ["Cache read tokens", usage.cache_read_tokens ?? 0],
+    ["Cache creation tokens", usage.cache_creation_tokens ?? 0],
+    ["Estimated cost", money(Number(usage.cost_usd || 0))]
+  ]);
+}
+
+function renderSessionChunkLinks(links) {
+  const rows = array(links);
+  if (rows.length === 0) {
+    return panelState("No linked chunks.");
+  }
+
+  return rows.map((link) =>
+    "<article class=\"row-card\">" +
+      "<div><div class=\"item-title\">" + linkToChunk(link.task_id, link.chunk_id, link.task_id + "/" + link.chunk_id) + "</div><p class=\"item-copy\">" + esc(link.linked_by || "") + "</p></div>" +
+      "<div class=\"chips\">" + chip(link.stage || "stage unset", link.stage) + chip(formatDate(link.linked_at), "done") + "</div>" +
+    "</article>"
+  ).join("");
+}
+
+function detailHeader(kicker, title, chipsHtml, metaHtml) {
+  return "<div class=\"detail-header\">" +
+    "<div class=\"detail-header-main\">" +
+      "<a class=\"back-link\" href=\"#/\">Overview</a>" +
+      "<p class=\"brand-kicker\">" + esc(kicker) + "</p>" +
+      "<h2 class=\"detail-title\">" + esc(title) + "</h2>" +
+      (metaHtml ? "<div class=\"detail-meta\">" + metaHtml + "</div>" : "") +
+    "</div>" +
+    (chipsHtml ? "<div class=\"chips detail-header-chips\">" + chipsHtml + "</div>" : "") +
+  "</div>";
+}
+
+function detailPanel(title, meta, body, extraClass = "") {
+  return "<section class=\"data-panel detail-panel " + esc(extraClass) + "\">" +
+    "<div class=\"panel-head\"><h3 class=\"panel-title\">" + esc(title) + "</h3>" +
+    (meta ? "<span class=\"panel-meta\">" + esc(meta) + "</span>" : "") +
+    "</div>" +
+    "<div class=\"detail-panel-body\">" + body + "</div>" +
+  "</section>";
+}
+
+function keyGrid(rows) {
+  return "<dl class=\"key-grid\">" + rows.map(([key, value]) =>
+    "<div><dt>" + esc(key) + "</dt><dd>" + (isHtmlValue(value) ? value.html : esc(value ?? "null")) + "</dd></div>"
+  ).join("") + "</dl>";
+}
+
+function preBlock(value) {
+  return "<pre class=\"pre-block\">" + esc(value) + "</pre>";
+}
+
+function matchingDispatchRuns(taskId, chunkId) {
+  return getDispatchRuns().filter((run) => run.task_id === taskId && (chunkId === null || run.chunk_id === chunkId));
+}
+
+function matchingSessions(taskId, chunkId) {
+  return getSessions().filter((session) =>
+    array(session.linked_chunks).some((link) => link.task_id === taskId && (chunkId === null || link.chunk_id === chunkId))
+  );
+}
+
+function taskReviewRollup(review, chunkId) {
+  return array(review?.chunk_rollups).find((rollup) => rollup.chunk?.id === chunkId) || null;
+}
+
+function renderInlineChunkLinks(links) {
+  const rows = array(links);
+  if (rows.length === 0) {
+    return "";
+  }
+  return rows.map((link) => linkToChunk(link.task_id, link.chunk_id, link.task_id + "/" + link.chunk_id)).join(", ");
+}
+
+function linkToTask(taskId, label) {
+  return "<a class=\"detail-link\" href=\"" + routeHref(["task", taskId]) + "\">" + esc(label || taskId) + "</a>";
+}
+
+function linkToChunk(taskId, chunkId, label) {
+  return "<a class=\"detail-link\" href=\"" + routeHref(["chunk", taskId, chunkId]) + "\">" + esc(label || taskId + "/" + chunkId) + "</a>";
+}
+
+function linkToDispatch(runId, label) {
+  return "<a class=\"detail-link item-id\" href=\"" + routeHref(["dispatch", runId]) + "\">" + esc(label || runId) + "</a>";
+}
+
+function linkToSession(sessionId, label) {
+  if (!sessionId) {
+    return esc(label || "null");
+  }
+  return "<a class=\"detail-link item-id\" href=\"" + routeHref(["session", sessionId]) + "\">" + esc(label || sessionId) + "</a>";
+}
+
+function htmlValue(html) {
+  return { html };
+}
+
+function isHtmlValue(value) {
+  return value && typeof value === "object" && typeof value.html === "string";
+}
+
+function apiPath(parts) {
+  return "/api/" + parts.map((part) => encodeURIComponent(part)).join("/");
+}
+
+function routeHref(parts) {
+  return "#/" + parts.map((part) => encodeURIComponent(part)).join("/");
+}
+
+function parseRoute() {
+  const hash = window.location.hash.replace(/^#\/?/, "");
+  if (hash === "" || hash === "/") {
+    return { kind: "overview" };
+  }
+
+  let parts;
+  try {
+    parts = hash.split("/").filter(Boolean).map(decodeURIComponent);
+  } catch {
+    return { kind: "unknown", raw: hash };
+  }
+
+  if (parts.length === 2 && parts[0] === "task") {
+    return { kind: "task", taskId: parts[1] };
+  }
+
+  if (parts.length === 3 && parts[0] === "chunk") {
+    return { kind: "chunk", taskId: parts[1], chunkId: parts[2] };
+  }
+
+  if (parts.length === 2 && parts[0] === "dispatch") {
+    return { kind: "dispatch", runId: parts[1] };
+  }
+
+  if (parts.length === 2 && parts[0] === "session") {
+    return { kind: "session", sessionId: parts[1] };
+  }
+
+  return { kind: "unknown", raw: hash };
+}
+
+function routeKey(route) {
+  if (route.kind === "task") {
+    return "task:" + route.taskId;
+  }
+  if (route.kind === "chunk") {
+    return "chunk:" + route.taskId + "/" + route.chunkId;
+  }
+  if (route.kind === "dispatch") {
+    return "dispatch:" + route.runId;
+  }
+  if (route.kind === "session") {
+    return "session:" + route.sessionId;
+  }
+  return route.kind;
+}
+
+function routeTitle(route) {
+  if (route.kind === "task") {
+    return "Task " + route.taskId;
+  }
+  if (route.kind === "chunk") {
+    return "Chunk " + route.taskId + "/" + route.chunkId;
+  }
+  if (route.kind === "dispatch") {
+    return "Dispatch " + shortId(route.runId);
+  }
+  if (route.kind === "session") {
+    return "Session " + shortId(route.sessionId);
+  }
+  return "Work Backlog";
+}
+
+function parseMaybeJson(value) {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
 }
 
 function renderSectionErrors() {
@@ -637,6 +1371,16 @@ function formatDate(value) {
   }
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function formatDateTime(value) {
+  if (!value) {
+    return "null";
+  }
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? String(value)
+    : date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 function formatCost(value) {

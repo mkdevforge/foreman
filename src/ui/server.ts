@@ -172,6 +172,14 @@ function resolveUiEndpoint(pathname: string): UiEndpoint | null {
     return { argv: ["chunk", "ready", `${parts[2]}/${parts[3]}`] };
   }
 
+  if (matchesPrefix(parts, ["api", "questions"], 4)) {
+    return { argv: ["question", "list", `${parts[2]}/${parts[3]}`] };
+  }
+
+  if (matchesPrefix(parts, ["api", "decisions"], 4)) {
+    return { argv: ["decision", "list", `${parts[2]}/${parts[3]}`] };
+  }
+
   if ((parts.length === 3 || parts.length === 4) && matchesPrefix(parts, ["api", "reviews"], parts.length)) {
     const ref = parts.length === 3 ? parts[2] : `${parts[2]}/${parts[3]}`;
     return { argv: ["review", ref] };

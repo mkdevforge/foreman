@@ -12,10 +12,11 @@
     <header class="topbar">
       <div class="brand-block">
         <p class="brand-kicker">Foreman</p>
-        <h1 class="page-title">Work Backlog</h1>
+        <h1 class="page-title" id="page-title">Work Backlog</h1>
       </div>
       <div class="topbar-actions">
         <span class="load-pill" id="load-state" data-testid="load-state">Loading</span>
+        <a class="button-secondary" href="#/">Overview</a>
         <button class="button-secondary" id="refresh-button" type="button">Refresh</button>
       </div>
     </header>
@@ -34,7 +35,8 @@
       </aside>
 
       <main class="content">
-        <section class="metric-grid" aria-label="Overview metrics">
+        <div id="overview-view">
+          <section class="metric-grid" aria-label="Overview metrics">
           <article class="metric-card">
             <div class="metric-label">Tasks</div>
             <div class="metric-value" id="metric-tasks">0</div>
@@ -178,7 +180,10 @@
               <div id="cost-rows"><div class="panel-state">Loading</div></div>
             </section>
           </div>
-        </section>
+          </section>
+        </div>
+
+        <section class="detail-view hidden" id="detail-view" aria-live="polite"></section>
       </main>
     </div>
   </div>
