@@ -43,6 +43,9 @@ describe("Phase 22a read-only UI server", () => {
     expect(shell.status).toBe(200);
     expect(shell.contentType).toContain("text/html");
     expect(shell.text).toContain("<title>Foreman</title>");
+    expect(shell.text).toContain("Work Backlog");
+    expect(shell.text).toContain('data-endpoint="/api/tasks"');
+    expect(shell.text).toContain("loadForemanData");
 
     const response = await fetchJson(server, "/api/tasks");
     expect(response.status).toBe(200);

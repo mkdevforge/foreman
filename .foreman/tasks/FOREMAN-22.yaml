@@ -5,7 +5,7 @@ source_ref: docs/dispatch-run-model.md#ui-contract
 description: Build the first read-only local Foreman UI on top of existing CLI JSON contracts.
 status: todo
 created_at: 2026-05-17T23:38:18.700Z
-updated_at: 2026-05-18T00:56:03.666Z
+updated_at: 2026-05-18T08:14:40.833Z
 chunks:
   - id: ui-readonly-server
     title: Read-only UI server
@@ -49,13 +49,17 @@ chunks:
     status: done
     stage: implement
     created_at: 2026-05-17T23:38:18.754Z
-    updated_at: 2026-05-18T00:56:03.666Z
+    updated_at: 2026-05-18T08:14:40.833Z
     notes:
       - ts: 2026-05-18T00:56:03.666Z
         body: Implemented foreman ui as a local Bun HTTP server with a read-only static shell and specific
           API endpoints backed by allowlisted foreman --json command execution. Added tests for
           endpoint mapping, allowlist rejection, command error mapping, invalid command JSON, port
           selection, help output, and shutdown.
+      - ts: 2026-05-18T08:14:40.833Z
+        body: "Follow-up after browser smoke: replaced placeholder shell with a real read-only overview that
+          fetches tasks, dispatch runs, sessions, and costs from the existing UI endpoints and
+          renders desktop/mobile-safe operational panels."
     decisions:
       - id: d_019e384e-bee7-77fc-943e-524ac04daca7
         body: Initial UI foundation is a local Bun-served web app with an allowlisted read-only CLI JSON

@@ -184,7 +184,7 @@ foreman ui
 foreman ui --host 127.0.0.1 --port 8787
 ```
 
-By default, `foreman ui` binds to `127.0.0.1` on an OS-selected port and prints the local URL. The first UI slice is intentionally read-only: it serves a local web shell and exposes specific API endpoints backed by existing `foreman ... --json` commands. It does not query SQLite directly, run as a daemon, mutate tasks, start dispatch, merge, clean up, install hooks, or change Git state.
+By default, `foreman ui` binds to `127.0.0.1` on an OS-selected port and prints the local URL. The first UI slice is intentionally read-only: it renders an overview from specific API endpoints backed by existing `foreman ... --json` commands. It does not query SQLite directly, run as a daemon, mutate tasks, start dispatch, merge, clean up, install hooks, or change Git state.
 
 ## Active Work Context
 
