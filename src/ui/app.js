@@ -1,4 +1,6 @@
 const STALE_AFTER_MS = 5 * 60 * 1000;
+const CHUNK_STATUSES = ["todo", "doing", "review", "done", "blocked"];
+const CHUNK_STAGES = ["discovery", "plan", "implement", "review"];
 
 const endpoints = {
   tasks: "/api/tasks",
@@ -32,6 +34,10 @@ const state = {
   sort: {
     work: "updated",
     dispatch: "updated"
+  },
+  write: {
+    actions: new Map(),
+    last: null
   }
 };
 
@@ -70,6 +76,16 @@ function bindControls() {
       state.sort.dispatch = button.getAttribute("data-sort-dispatch") || "updated";
       render();
     });
+  });
+
+  document.addEventListener("submit", (event) => {
+    const form = event.target instanceof HTMLFormElement ? event.target : null;
+    if (form === null || !form.matches("[data-ui-write-form]")) {
+      return;
+    }
+
+    event.preventDefault();
+    void submitWriteForm(form);
   });
 }
 
@@ -137,6 +153,35 @@ async function fetchJson(path) {
 
   if (!response.ok || body.error) {
     const error = new Error(readErrorMessage(body) || "Request failed");
+    error.key = endpointKey(path);
+    error.status = response.status;
+    error.body = body;
+    throw error;
+  }
+
+  return body;
+}
+
+async function postJson(path, payload) {
+  let response;
+  let body;
+  try {
+    response = await fetch(path, {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    });
+    body = await response.json();
+  } catch (error) {
+    error.key = endpointKey(path);
+    throw error;
+  }
+
+  if (!response.ok || body.error) {
+    const error = new Error(readWriteErrorMessage(body) || "Request failed");
     error.key = endpointKey(path);
     error.status = response.status;
     error.body = body;
@@ -506,6 +551,109 @@ async function loadChunkExtras(taskId, chunks) {
   return new Map(entries);
 }
 
+async function submitWriteForm(form) {
+  const actionKey = form.dataset.actionKey || "";
+  if (actionKey.length === 0 || state.write.actions.get(actionKey)?.status === "pending") {
+    return;
+  }
+
+  let request;
+  try {
+    request = writeRequestFromForm(form);
+  } catch (error) {
+    setWriteAction(actionKey, "error", error.message || "Unable to submit form.");
+    renderRoute();
+    return;
+  }
+
+  setWriteAction(actionKey, "pending", "Saving");
+  renderRoute();
+
+  try {
+    await postJson(request.path, request.body);
+    setWriteAction(actionKey, "success", request.successMessage);
+    await loadForemanData();
+  } catch (error) {
+    setWriteAction(actionKey, "error", readWriteErrorMessage(error.body) || error.message || "Write failed.");
+    renderRoute();
+  }
+}
+
+function writeRequestFromForm(form) {
+  const data = new FormData(form);
+  const action = form.dataset.action || "";
+  const taskId = requireDataAttribute(form, "taskId");
+  const chunkId = requireDataAttribute(form, "chunkId");
+
+  if (action === "chunk-status") {
+    return {
+      path: apiPath(["chunks", taskId, chunkId, "status"]),
+      body: { status: requireFormString(data, "status") },
+      successMessage: "Status saved."
+    };
+  }
+
+  if (action === "chunk-stage") {
+    return {
+      path: apiPath(["chunks", taskId, chunkId, "stage"]),
+      body: { stage: requireFormString(data, "stage") },
+      successMessage: "Stage saved."
+    };
+  }
+
+  if (action === "chunk-note") {
+    return {
+      path: apiPath(["chunks", taskId, chunkId, "notes"]),
+      body: { body: requireFormString(data, "body") },
+      successMessage: "Note added."
+    };
+  }
+
+  if (action === "question-add") {
+    return {
+      path: apiPath(["questions", taskId, chunkId]),
+      body: { body: requireFormString(data, "body") },
+      successMessage: "Question added."
+    };
+  }
+
+  if (action === "question-answer") {
+    const questionId = requireDataAttribute(form, "questionId");
+    return {
+      path: apiPath(["questions", taskId, chunkId, questionId, "answer"]),
+      body: { answer: requireFormString(data, "answer") },
+      successMessage: "Answer saved."
+    };
+  }
+
+  if (action === "decision-add") {
+    return {
+      path: apiPath(["decisions", taskId, chunkId]),
+      body: { body: requireFormString(data, "body") },
+      successMessage: "Decision added."
+    };
+  }
+
+  throw new Error("Unknown write action.");
+}
+
+function requireDataAttribute(form, key) {
+  const value = form.dataset[key];
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error("Missing write target.");
+  }
+  return value;
+}
+
+function requireFormString(data, key) {
+  const value = data.get(key);
+  const text = typeof value === "string" ? value.trim() : "";
+  if (text.length === 0) {
+    throw new Error("Enter a value before saving.");
+  }
+  return text;
+}
+
 function renderRoute() {
   const overview = byId("overview-view");
   const detail = byId("detail-view");
@@ -582,6 +730,7 @@ function renderTaskDetail(data) {
     chip(task.status || "unknown", task.status),
     esc(task.description || "")
   ) +
+    detailWriteBanner() +
     "<div class=\"detail-grid\">" +
       detailPanel("Task State", "", keyGrid([
         ["Full task id", task.id],
@@ -612,6 +761,7 @@ function renderChunkDetail(data) {
     chip(data.chunk.status || "unknown", data.chunk.status) + chip(data.chunk.stage || "stage unset", data.chunk.stage) + readinessChip(data.readiness),
     linkToTask(data.task.id, data.task.title || data.task.id)
   ) +
+    detailWriteBanner() +
     "<div class=\"detail-grid\">" +
       detailPanel("Chunk State", "", keyGrid([
         ["Full chunk ref", ref],
@@ -620,9 +770,10 @@ function renderChunkDetail(data) {
         ["Linked cost", money(Number(data.review?.total_cost_usd || 0))],
         ["Dispatch runs", dispatchRuns.length]
       ])) +
+      detailPanel("Controls", "", renderChunkControls(data.task.id, data.chunk), "detail-panel-wide") +
       detailPanel("Spec", "", preBlock(data.chunk.spec || "No spec."), "detail-panel-wide") +
       detailPanel("Readiness", blockers.length + " blockers", renderReadinessDetail(data.readiness, blockers, warnings)) +
-      detailPanel("Open Questions", String(array(data.questions).filter((question) => question.status === "open").length), renderQuestionList(data.questions)) +
+      detailPanel("Open Questions", String(array(data.questions).filter((question) => question.status === "open").length), renderQuestionList(data.questions, data.task.id, data.chunk.id)) +
       detailPanel("Accepted Decisions", String(array(data.decisions).length), renderDecisionList(data.decisions)) +
       detailPanel("Linked Sessions", String(linkedEntries.length), renderLinkedSessionEntries(linkedEntries)) +
       detailPanel("Dispatch Runs", String(dispatchRuns.length), renderDispatchRunTable(dispatchRuns)) +
@@ -690,6 +841,74 @@ function renderSessionDetail(data) {
     "</div>";
 }
 
+function renderChunkControls(taskId, chunk) {
+  return "<div class=\"control-grid\">" +
+    renderChunkStateControls(taskId, chunk, false) +
+    renderTextWriteForm({
+      action: "chunk-note",
+      key: writeActionKey("chunk-note", taskId, chunk.id),
+      taskId,
+      chunkId: chunk.id,
+      label: "Add note",
+      field: "body",
+      buttonLabel: "Add note"
+    }) +
+    renderTextWriteForm({
+      action: "question-add",
+      key: writeActionKey("question-add", taskId, chunk.id),
+      taskId,
+      chunkId: chunk.id,
+      label: "Add question",
+      field: "body",
+      buttonLabel: "Add question"
+    }) +
+    renderTextWriteForm({
+      action: "decision-add",
+      key: writeActionKey("decision-add", taskId, chunk.id),
+      taskId,
+      chunkId: chunk.id,
+      label: "Accept decision",
+      field: "body",
+      buttonLabel: "Accept decision"
+    }) +
+  "</div>";
+}
+
+function renderChunkStateControls(taskId, chunk, compact) {
+  return "<div class=\"" + (compact ? "chunk-table-controls" : "state-control-pair") + "\">" +
+    renderChunkSelectForm(taskId, chunk, "status", compact) +
+    renderChunkSelectForm(taskId, chunk, "stage", compact) +
+  "</div>";
+}
+
+function renderChunkSelectForm(taskId, chunk, kind, compact) {
+  const action = kind === "status" ? "chunk-status" : "chunk-stage";
+  const value = kind === "status" ? chunk.status : chunk.stage;
+  const values = kind === "status" ? CHUNK_STATUSES : CHUNK_STAGES;
+  const label = kind === "status" ? "Status" : "Stage";
+  const actionKey = writeActionKey(action, taskId, chunk.id);
+  const pending = isWritePending(actionKey);
+
+  return "<form class=\"write-form " + (compact ? "write-form-compact" : "write-form-card") + "\" data-ui-write-form data-action=\"" + esc(action) + "\" data-action-key=\"" + esc(actionKey) + "\" data-task-id=\"" + esc(taskId) + "\" data-chunk-id=\"" + esc(chunk.id) + "\">" +
+    "<label class=\"field\"><span>" + esc(label) + "</span>" +
+      "<select class=\"select-control\" name=\"" + esc(kind) + "\"" + disabledAttr(pending) + ">" + renderOptions(values, value) + "</select>" +
+    "</label>" +
+    "<div class=\"form-actions\"><button class=\"" + (compact ? "button-compact" : "button-primary") + "\" type=\"submit\"" + disabledAttr(pending) + ">" + esc(pending ? "Saving" : "Save") + "</button></div>" +
+    renderWriteActionStatus(actionKey) +
+  "</form>";
+}
+
+function renderTextWriteForm(options) {
+  const pending = isWritePending(options.key);
+  return "<form class=\"write-form write-form-card\" data-ui-write-form data-action=\"" + esc(options.action) + "\" data-action-key=\"" + esc(options.key) + "\" data-task-id=\"" + esc(options.taskId) + "\" data-chunk-id=\"" + esc(options.chunkId) + "\">" +
+    "<label class=\"field\"><span>" + esc(options.label) + "</span>" +
+      "<textarea class=\"textarea-control\" name=\"" + esc(options.field) + "\" rows=\"3\" maxlength=\"4000\" required" + disabledAttr(pending) + "></textarea>" +
+    "</label>" +
+    "<div class=\"form-actions\"><button class=\"button-primary\" type=\"submit\"" + disabledAttr(pending) + ">" + esc(pending ? "Saving" : options.buttonLabel) + "</button></div>" +
+    renderWriteActionStatus(options.key) +
+  "</form>";
+}
+
 function renderTaskChunkTable(task, chunks, extras, review) {
   if (chunks.length === 0) {
     return panelState("No chunks found.");
@@ -702,7 +921,7 @@ function renderTaskChunkTable(task, chunks, extras, review) {
       const openQuestions = array(extra.questions).filter((question) => question.status === "open").length;
       return "<tr>" +
         "<td><div class=\"item-title\">" + linkToChunk(task.id, chunk.id, task.id + "/" + chunk.id) + "<span>" + esc(chunk.title || "Untitled chunk") + "</span></div></td>" +
-        "<td><div class=\"meta-line\">" + chip(chunk.status || "unknown", chunk.status) + chip(chunk.stage || "stage unset", chunk.stage) + "</div></td>" +
+        "<td><div class=\"meta-line\">" + chip(chunk.status || "unknown", chunk.status) + chip(chunk.stage || "stage unset", chunk.stage) + "</div>" + renderChunkStateControls(task.id, chunk, true) + "</td>" +
         "<td>" + readinessChip(extra.readiness) + "</td>" +
         "<td class=\"mono\">" + esc(openQuestions + " open / " + array(extra.questions).length + " total") + "</td>" +
         "<td class=\"mono\">" + esc(array(extra.decisions).length) + "</td>" +
@@ -752,22 +971,36 @@ function renderDecisionsByChunk(task, chunks, extras) {
   ).join("");
 }
 
-function renderQuestionList(questions) {
+function renderQuestionList(questions, taskId = null, chunkId = null) {
   const rows = array(questions);
   if (rows.length === 0) {
     return panelState("No questions.");
   }
 
-  return rows.map((question) =>
-    "<article class=\"row-card\">" +
+  return rows.map((question) => {
+    const canAnswer = taskId !== null && chunkId !== null && question.status === "open";
+    return "<article class=\"row-card\">" +
       "<div>" +
         "<div class=\"item-title\"><span class=\"item-id\">" + esc(question.id) + "</span><span>" + esc(question.status || "unknown") + "</span></div>" +
         "<p class=\"item-copy\">" + esc(question.body) + "</p>" +
         (question.answer ? "<p class=\"item-copy\">" + esc(question.answer) + "</p>" : "") +
+        (canAnswer ? renderQuestionAnswerForm(taskId, chunkId, question) : "") +
       "</div>" +
       "<div class=\"chips\">" + chip(question.status || "unknown", question.status) + chip(formatDate(question.answered_at || question.asked_at), question.status) + "</div>" +
-    "</article>"
-  ).join("");
+    "</article>";
+  }).join("");
+}
+
+function renderQuestionAnswerForm(taskId, chunkId, question) {
+  const actionKey = writeActionKey("question-answer", taskId, chunkId, question.id);
+  const pending = isWritePending(actionKey);
+  return "<form class=\"write-form answer-form\" data-ui-write-form data-action=\"question-answer\" data-action-key=\"" + esc(actionKey) + "\" data-task-id=\"" + esc(taskId) + "\" data-chunk-id=\"" + esc(chunkId) + "\" data-question-id=\"" + esc(question.id) + "\">" +
+    "<label class=\"field\"><span>Answer</span>" +
+      "<textarea class=\"textarea-control\" name=\"answer\" rows=\"2\" maxlength=\"4000\" required" + disabledAttr(pending) + "></textarea>" +
+    "</label>" +
+    "<div class=\"form-actions\"><button class=\"button-primary\" type=\"submit\"" + disabledAttr(pending) + ">" + esc(pending ? "Saving" : "Answer") + "</button></div>" +
+    renderWriteActionStatus(actionKey) +
+  "</form>";
 }
 
 function renderDecisionList(decisions) {
@@ -944,6 +1177,77 @@ function detailPanel(title, meta, body, extraClass = "") {
     "</div>" +
     "<div class=\"detail-panel-body\">" + body + "</div>" +
   "</section>";
+}
+
+function detailWriteBanner() {
+  const latest = state.write.last;
+  if (!latest || latest.detailKey !== routeKey(state.route)) {
+    return "";
+  }
+
+  return "<div class=\"write-banner write-banner-" + esc(latest.status) + "\" role=\"" + (latest.status === "error" ? "alert" : "status") + "\">" +
+    esc(latest.message) +
+  "</div>";
+}
+
+function renderWriteActionStatus(actionKey) {
+  const entry = state.write.actions.get(actionKey);
+  if (!entry) {
+    return "";
+  }
+
+  return "<p class=\"form-status form-status-" + esc(entry.status) + "\" role=\"" + (entry.status === "error" ? "alert" : "status") + "\">" +
+    esc(entry.message) +
+  "</p>";
+}
+
+function setWriteAction(actionKey, status, message) {
+  const entry = {
+    status,
+    message,
+    detailKey: routeKey(state.route),
+    updatedAt: Date.now()
+  };
+  state.write.actions.set(actionKey, entry);
+  state.write.last = entry;
+}
+
+function isWritePending(actionKey) {
+  return state.write.actions.get(actionKey)?.status === "pending";
+}
+
+function writeActionKey(action, taskId, chunkId, extra = "") {
+  return [action, taskId, chunkId, extra].filter((part) => String(part).length > 0).join(":");
+}
+
+function renderOptions(values, current) {
+  const allValues = optionValues(values, current);
+  return allValues.map((value) =>
+    "<option value=\"" + esc(value) + "\"" + (String(value) === String(current || "") ? " selected" : "") + ">" + esc(value) + "</option>"
+  ).join("");
+}
+
+function optionValues(values, current) {
+  const result = [];
+  const seen = new Set();
+  const add = (value) => {
+    if (value === null || value === undefined || String(value).length === 0 || seen.has(String(value))) {
+      return;
+    }
+    seen.add(String(value));
+    result.push(String(value));
+  };
+
+  if (!values.includes(current)) {
+    add(current);
+  }
+
+  values.forEach(add);
+  return result;
+}
+
+function disabledAttr(disabled) {
+  return disabled ? " disabled" : "";
 }
 
 function keyGrid(rows) {
@@ -1303,6 +1607,21 @@ function readErrorText(error) {
 
 function readErrorMessage(body) {
   return body && body.error && body.error.message ? body.error.message : "";
+}
+
+function readWriteErrorMessage(body) {
+  const nestedMessage = body?.error?.details?.stderr_json?.error?.message;
+  if (typeof nestedMessage === "string" && nestedMessage.length > 0) {
+    return nestedMessage;
+  }
+
+  const message = readErrorMessage(body);
+  const code = body?.error?.code;
+  if (message && typeof code === "string") {
+    return message + " (" + code + ")";
+  }
+
+  return message;
 }
 
 function firstLine(value) {

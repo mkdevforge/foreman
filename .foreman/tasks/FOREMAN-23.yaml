@@ -5,7 +5,7 @@ source_ref: docs/backlog/future-dispatch-human-gates.md#ui-direction
 description: Add narrow local UI mutation flows on top of existing Foreman CLI JSON contracts.
 status: doing
 created_at: 2026-05-18T14:26:55.569Z
-updated_at: 2026-05-18T14:42:59.150Z
+updated_at: 2026-05-18T15:02:19.632Z
 chunks:
   - id: ui-write-bridge
     title: UI write bridge
@@ -47,10 +47,10 @@ chunks:
       Foreman mutations.
 
       - The bridge remains auditable and small because every write maps to one existing CLI command.
-    status: review
+    status: done
     stage: implement
     created_at: 2026-05-18T14:26:55.630Z
-    updated_at: 2026-05-18T14:42:59.150Z
+    updated_at: 2026-05-18T14:50:45.638Z
     notes:
       - ts: 2026-05-18T14:32:05.828Z
         body: Implemented the local UI write bridge as explicit POST routes backed by allowlisted existing
@@ -88,11 +88,19 @@ chunks:
 
       - A human can manage day-to-day task metadata from the local UI without leaving the existing
       CLI-backed contract.
-    status: todo
-    stage: discovery
+    status: review
+    stage: implement
     created_at: 2026-05-18T14:26:55.690Z
-    updated_at: 2026-05-18T14:26:55.690Z
-    notes: []
+    updated_at: 2026-05-18T15:02:19.632Z
+    notes:
+      - ts: 2026-05-18T15:02:19.632Z
+        body: "Implemented basic local UI controls on top of the Phase 23 write bridge: task detail now has
+          compact chunk status/stage forms, chunk detail has
+          status/stage/note/question/answer/decision forms, writes show pending/success/error
+          states, successful writes refresh from the CLI-backed read endpoints, and failed writes do
+          not mutate the visible model optimistically. Added browser coverage for successful writes,
+          error display, and no-overflow behavior. Verified build, UI browser tests, bridge tests,
+          and full suite."
   - id: ui-dispatch-controls
     title: Dispatch UI controls
     spec: >

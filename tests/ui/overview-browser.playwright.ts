@@ -104,6 +104,108 @@ test("renders read-only detail routes at desktop and mobile sizes", async ({ pag
   await expectNoHorizontalOverflow(page);
 });
 
+test("submits basic chunk controls through the UI write bridge", async ({ page }) => {
+  const fixture = createFixtureState();
+  await page.route("**/api/**", async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    const result = request.method() === "POST"
+      ? handleFixtureWrite(path, request.postData() || "{}", fixture)
+      : { status: 200, body: fixtureForPath(path, fixture) };
+
+    await route.fulfill({
+      status: result.status,
+      contentType: "application/json",
+      body: JSON.stringify(result.body)
+    });
+  });
+
+  await page.goto(serverUrl + "#/chunk/TASK-1/blocked-chunk");
+  await expect(page.getByTestId("load-state")).toHaveText("Loaded");
+  await expect(page.locator("#page-title")).toHaveText("Chunk Detail");
+
+  const statusForm = page.locator('[data-action="chunk-status"][data-task-id="TASK-1"][data-chunk-id="blocked-chunk"]').first();
+  await statusForm.locator('select[name="status"]').selectOption("review");
+  await statusForm.getByRole("button", { name: "Save" }).click();
+  await expect(page.locator("#detail-view")).toContainText("Status saved.");
+  await expect(page.locator("#detail-view")).toContainText("review");
+
+  const noteForm = page.locator('[data-action="chunk-note"][data-task-id="TASK-1"][data-chunk-id="blocked-chunk"]');
+  await noteForm.locator('textarea[name="body"]').fill("Added from the local UI.");
+  await noteForm.getByRole("button", { name: "Add note" }).click();
+  await expect(page.locator("#detail-view")).toContainText("Note added.");
+  await expect(page.locator("#detail-view")).toContainText("Added from the local UI.");
+
+  const answerForm = page.locator('[data-action="question-answer"][data-question-id="q_blocked"]');
+  await answerForm.locator('textarea[name="answer"]').fill("Show chunk controls first.");
+  await answerForm.getByRole("button", { name: "Answer" }).click();
+  await expect(page.locator("#detail-view")).toContainText("Answer saved.");
+  await expect(page.locator("#detail-view")).toContainText("Show chunk controls first.");
+
+  const questionForm = page.locator('[data-action="question-add"][data-task-id="TASK-1"][data-chunk-id="blocked-chunk"]');
+  await questionForm.locator('textarea[name="body"]').fill("Should this be visible after refresh?");
+  await questionForm.getByRole("button", { name: "Add question" }).click();
+  await expect(page.locator("#detail-view")).toContainText("Question added.");
+  await expect(page.locator("#detail-view")).toContainText("Should this be visible after refresh?");
+
+  const decisionForm = page.locator('[data-action="decision-add"][data-task-id="TASK-1"][data-chunk-id="blocked-chunk"]');
+  await decisionForm.locator('textarea[name="body"]').fill("Keep controls on chunk detail.");
+  await decisionForm.getByRole("button", { name: "Accept decision" }).click();
+  await expect(page.locator("#detail-view")).toContainText("Decision added.");
+  await expect(page.locator("#detail-view")).toContainText("Keep controls on chunk detail.");
+
+  await page.goto(serverUrl + "#/task/TASK-1");
+  await expect(page.locator("#page-title")).toHaveText("Task Detail");
+  const stageForm = page.locator('[data-action="chunk-stage"][data-task-id="TASK-1"][data-chunk-id="ready-chunk"]').first();
+  await stageForm.locator('select[name="stage"]').selectOption("review");
+  await stageForm.getByRole("button", { name: "Save" }).click();
+  await expect(page.locator("#detail-view")).toContainText("Stage saved.");
+
+  expect(fixture.writes).toEqual([
+    { path: "/api/chunks/TASK-1/blocked-chunk/status", body: { status: "review" } },
+    { path: "/api/chunks/TASK-1/blocked-chunk/notes", body: { body: "Added from the local UI." } },
+    { path: "/api/questions/TASK-1/blocked-chunk/q_blocked/answer", body: { answer: "Show chunk controls first." } },
+    { path: "/api/questions/TASK-1/blocked-chunk", body: { body: "Should this be visible after refresh?" } },
+    { path: "/api/decisions/TASK-1/blocked-chunk", body: { body: "Keep controls on chunk detail." } },
+    { path: "/api/chunks/TASK-1/ready-chunk/stage", body: { stage: "review" } }
+  ]);
+  await expectNoHorizontalOverflow(page);
+});
+
+test("shows write command errors without hidden optimistic mutation", async ({ page }) => {
+  const fixture = createFixtureState();
+  await page.route("**/api/**", async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    const result = request.method() === "POST"
+      ? {
+          status: 400,
+          body: {
+            schema_version: 1,
+            error: { code: "ui_command_failed", message: "bad status", exit_code: 2 }
+          }
+        }
+      : { status: 200, body: fixtureForPath(path, fixture) };
+
+    await route.fulfill({
+      status: result.status,
+      contentType: "application/json",
+      body: JSON.stringify(result.body)
+    });
+  });
+
+  await page.goto(serverUrl + "#/chunk/TASK-1/blocked-chunk");
+  await expect(page.locator("#page-title")).toHaveText("Chunk Detail");
+
+  const statusForm = page.locator('[data-action="chunk-status"][data-task-id="TASK-1"][data-chunk-id="blocked-chunk"]').first();
+  await statusForm.locator('select[name="status"]').selectOption("blocked");
+  await statusForm.getByRole("button", { name: "Save" }).click();
+
+  await expect(page.locator("#detail-view")).toContainText("bad status (ui_command_failed)");
+  await expect(statusForm.locator('select[name="status"]')).toHaveValue("todo");
+  expect(fixture.task.chunks[1].status).toBe("todo");
+});
+
 function startForemanUi(): Promise<{ process: ChildProcess; url: string }> {
   return new Promise((resolvePromise, reject) => {
     const child = spawn("bun", ["run", "foreman", "--", "ui", "--port", "0"], {
@@ -140,39 +242,91 @@ function startForemanUi(): Promise<{ process: ChildProcess; url: string }> {
   });
 }
 
-function fixtureForPath(path: string): unknown {
+type FixtureNote = { ts: string; body: string };
+type FixtureChunk = {
+  id: string;
+  title: string;
+  spec: string;
+  status: string;
+  stage: string;
+  created_at: string;
+  updated_at: string;
+  notes: FixtureNote[];
+};
+type FixtureQuestion = {
+  id: string;
+  status: string;
+  body: string;
+  asked_at: string;
+  answered_at: string | null;
+  answer: string | null;
+};
+type FixtureDecision = { id: string; body: string; decided_at: string };
+type FixtureTask = {
+  schema_version: 1;
+  id: string;
+  title: string;
+  description: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  chunks: FixtureChunk[];
+};
+type FixtureState = {
+  task: FixtureTask;
+  questionsByChunk: Map<string, FixtureQuestion[]>;
+  decisionsByChunk: Map<string, FixtureDecision[]>;
+  writes: Array<{ path: string; body: unknown }>;
+  nextQuestionNumber: number;
+  nextDecisionNumber: number;
+  nextNoteNumber: number;
+};
+
+function createFixtureState(): FixtureState {
+  return {
+    task: taskOneFixture(),
+    questionsByChunk: new Map([
+      ["ready-chunk", []],
+      [
+        "blocked-chunk",
+        [
+          {
+            id: "q_blocked",
+            status: "open",
+            body: "Which UI detail should be shown first?",
+            asked_at: "2026-05-18T09:30:00.000Z",
+            answered_at: null,
+            answer: null
+          }
+        ]
+      ]
+    ]),
+    decisionsByChunk: new Map([
+      ["ready-chunk", []],
+      [
+        "blocked-chunk",
+        [
+          {
+            id: "d_bridge",
+            body: "Use the existing CLI bridge.",
+            decided_at: "2026-05-18T09:45:00.000Z"
+          }
+        ]
+      ]
+    ]),
+    writes: [] as Array<{ path: string; body: unknown }>,
+    nextQuestionNumber: 1,
+    nextDecisionNumber: 1,
+    nextNoteNumber: 1
+  };
+}
+
+function fixtureForPath(path: string, state = createFixtureState()): unknown {
   if (path === "/api/tasks") {
     return {
       schema_version: 1,
       tasks: [
-        {
-          id: "TASK-1",
-          title: "UI work",
-          description: "Build useful overview behavior.",
-          status: "todo",
-          created_at: "2026-05-17T10:00:00.000Z",
-          updated_at: "2026-05-18T10:00:00.000Z",
-          chunks: [
-            {
-              id: "ready-chunk",
-              title: "Ready chunk",
-              spec: "Ready work can be dispatched.",
-              status: "todo",
-              stage: "implement",
-              created_at: "2026-05-17T10:00:00.000Z",
-              updated_at: "2026-05-18T10:00:00.000Z"
-            },
-            {
-              id: "blocked-chunk",
-              title: "Blocked chunk",
-              spec: "Blocked work needs a decision.",
-              status: "todo",
-              stage: "plan",
-              created_at: "2026-05-17T10:00:00.000Z",
-              updated_at: "2026-05-18T09:00:00.000Z"
-            }
-          ]
-        },
+        state.task,
         {
           id: "TASK-2",
           title: "Finished work",
@@ -218,7 +372,7 @@ function fixtureForPath(path: string): unknown {
   if (path === "/api/tasks/TASK-1") {
     return {
       schema_version: 1,
-      task: taskOneFixture()
+      task: state.task
     };
   }
 
@@ -226,12 +380,12 @@ function fixtureForPath(path: string): unknown {
     return {
       schema_version: 1,
       task_id: "TASK-1",
-      chunks: taskOneFixture().chunks
+      chunks: state.task.chunks
     };
   }
 
   if (path === "/api/questions/TASK-1/ready-chunk") {
-    return { schema_version: 1, task_id: "TASK-1", chunk_id: "ready-chunk", questions: [] };
+    return { schema_version: 1, task_id: "TASK-1", chunk_id: "ready-chunk", questions: state.questionsByChunk.get("ready-chunk") ?? [] };
   }
 
   if (path === "/api/questions/TASK-1/blocked-chunk") {
@@ -239,21 +393,12 @@ function fixtureForPath(path: string): unknown {
       schema_version: 1,
       task_id: "TASK-1",
       chunk_id: "blocked-chunk",
-      questions: [
-        {
-          id: "q_blocked",
-          status: "open",
-          body: "Which UI detail should be shown first?",
-          asked_at: "2026-05-18T09:30:00.000Z",
-          answered_at: null,
-          answer: null
-        }
-      ]
+      questions: state.questionsByChunk.get("blocked-chunk") ?? []
     };
   }
 
   if (path === "/api/decisions/TASK-1/ready-chunk") {
-    return { schema_version: 1, task_id: "TASK-1", chunk_id: "ready-chunk", decisions: [] };
+    return { schema_version: 1, task_id: "TASK-1", chunk_id: "ready-chunk", decisions: state.decisionsByChunk.get("ready-chunk") ?? [] };
   }
 
   if (path === "/api/decisions/TASK-1/blocked-chunk") {
@@ -261,13 +406,7 @@ function fixtureForPath(path: string): unknown {
       schema_version: 1,
       task_id: "TASK-1",
       chunk_id: "blocked-chunk",
-      decisions: [
-        {
-          id: "d_bridge",
-          body: "Use the existing CLI bridge.",
-          decided_at: "2026-05-18T09:45:00.000Z"
-        }
-      ]
+      decisions: state.decisionsByChunk.get("blocked-chunk") ?? []
     };
   }
 
@@ -276,10 +415,10 @@ function fixtureForPath(path: string): unknown {
       schema_version: 1,
       review: {
         type: "task",
-        task: taskOneFixture(),
+        task: state.task,
         chunk_rollups: [
-          { chunk: taskOneFixture().chunks[0], linked_session_count: 1, total_cost_usd: 0.01 },
-          { chunk: taskOneFixture().chunks[1], linked_session_count: 1, total_cost_usd: 0.01 }
+          { chunk: state.task.chunks[0], linked_session_count: 1, total_cost_usd: 0.01 },
+          { chunk: state.task.chunks[1], linked_session_count: 1, total_cost_usd: 0.01 }
         ],
         linked_sessions: [
           {
@@ -298,8 +437,8 @@ function fixtureForPath(path: string): unknown {
       schema_version: 1,
       review: {
         type: "chunk",
-        task: taskOneFixture(),
-        chunk: taskOneFixture().chunks[1],
+        task: state.task,
+        chunk: state.task.chunks[1],
         linked_sessions_by_stage: [
           {
             stage: "implement",
@@ -422,7 +561,100 @@ function fixtureForPath(path: string): unknown {
   return { schema_version: 1, error: { message: "unexpected path " + path } };
 }
 
-function taskOneFixture() {
+function handleFixtureWrite(path: string, rawBody: string, state: FixtureState): { status: number; body: unknown } {
+  const body = parseJsonObject(rawBody);
+  state.writes.push({ path, body });
+
+  const parts = path.split("/").filter(Boolean).map(decodeURIComponent);
+  if (parts.length === 5 && parts[0] === "api" && parts[1] === "chunks" && parts[2] === "TASK-1") {
+    const chunk = requireFixtureChunk(state, parts[3]);
+    if (parts[4] === "status") {
+      chunk.status = readBodyString(body, "status");
+      chunk.updated_at = "2026-05-18T11:00:00.000Z";
+      return { status: 200, body: { schema_version: 1, task_id: "TASK-1", chunk } };
+    }
+    if (parts[4] === "stage") {
+      chunk.stage = readBodyString(body, "stage");
+      chunk.updated_at = "2026-05-18T11:00:00.000Z";
+      return { status: 200, body: { schema_version: 1, task_id: "TASK-1", chunk } };
+    }
+    if (parts[4] === "notes") {
+      chunk.notes.push({
+        ts: `2026-05-18T11:00:${String(state.nextNoteNumber++).padStart(2, "0")}.000Z`,
+        body: readBodyString(body, "body")
+      });
+      chunk.updated_at = "2026-05-18T11:00:00.000Z";
+      return { status: 200, body: { schema_version: 1, task_id: "TASK-1", chunk } };
+    }
+  }
+
+  if (parts.length === 4 && parts[0] === "api" && parts[1] === "questions" && parts[2] === "TASK-1") {
+    const questions = state.questionsByChunk.get(parts[3]) ?? [];
+    state.questionsByChunk.set(parts[3], questions);
+    const question: FixtureQuestion = {
+      id: `q_added_${state.nextQuestionNumber++}`,
+      status: "open",
+      body: readBodyString(body, "body"),
+      asked_at: "2026-05-18T11:01:00.000Z",
+      answered_at: null,
+      answer: null
+    };
+    questions.push(question);
+    return { status: 200, body: { schema_version: 1, task_id: "TASK-1", chunk_id: parts[3], question } };
+  }
+
+  if (parts.length === 6 && parts[0] === "api" && parts[1] === "questions" && parts[2] === "TASK-1" && parts[5] === "answer") {
+    const questions = state.questionsByChunk.get(parts[3]) ?? [];
+    const question = questions.find((candidate) => candidate.id === parts[4]);
+    if (question === undefined) {
+      return { status: 404, body: { schema_version: 1, error: { message: "missing question" } } };
+    }
+    question.status = "answered";
+    question.answer = readBodyString(body, "answer");
+    question.answered_at = "2026-05-18T11:02:00.000Z";
+    return { status: 200, body: { schema_version: 1, task_id: "TASK-1", chunk_id: parts[3], question } };
+  }
+
+  if (parts.length === 4 && parts[0] === "api" && parts[1] === "decisions" && parts[2] === "TASK-1") {
+    const decisions = state.decisionsByChunk.get(parts[3]) ?? [];
+    state.decisionsByChunk.set(parts[3], decisions);
+    const decision: FixtureDecision = {
+      id: `d_added_${state.nextDecisionNumber++}`,
+      body: readBodyString(body, "body"),
+      decided_at: "2026-05-18T11:03:00.000Z"
+    };
+    decisions.push(decision);
+    return { status: 200, body: { schema_version: 1, task_id: "TASK-1", chunk_id: parts[3], decision } };
+  }
+
+  return { status: 404, body: { schema_version: 1, error: { message: "unexpected write path " + path } } };
+}
+
+function parseJsonObject(rawBody: string): Record<string, unknown> {
+  const parsed = JSON.parse(rawBody) as unknown;
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("expected object body");
+  }
+  return parsed as Record<string, unknown>;
+}
+
+function readBodyString(body: Record<string, unknown>, key: string): string {
+  const value = body[key];
+  if (typeof value !== "string") {
+    throw new Error(`missing ${key}`);
+  }
+  return value;
+}
+
+function requireFixtureChunk(state: FixtureState, chunkId: string): FixtureChunk {
+  const chunk = state.task.chunks.find((candidate) => candidate.id === chunkId);
+  if (chunk === undefined) {
+    throw new Error("missing fixture chunk " + chunkId);
+  }
+  return chunk;
+}
+
+function taskOneFixture(): FixtureTask {
   return {
     schema_version: 1,
     id: "TASK-1",
