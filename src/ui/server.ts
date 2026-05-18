@@ -32,6 +32,13 @@ interface UiEndpoint {
   argv: string[];
 }
 
+interface UiRoute {
+  methods: {
+    GET?: () => UiEndpoint;
+    POST?: (body: Record<string, unknown>) => UiEndpoint | Response;
+  };
+}
+
 interface UiErrorPayload {
   schema_version: 1;
   error: {
@@ -112,22 +119,25 @@ async function handleUiRequest(
 ): Promise<Response> {
   const url = new URL(request.url);
 
-  if (request.method !== "GET") {
-    return jsonError(405, "ui_method_not_allowed", "Foreman UI endpoints are read-only GET endpoints.", 2, {
-      method: request.method
-    });
-  }
-
   const staticRoute = UI_STATIC_ROUTES.get(url.pathname);
   if (staticRoute !== undefined) {
+    if (request.method !== "GET") {
+      return methodNotAllowed(request.method, ["GET"]);
+    }
+
     return serveStaticUiFile(staticRoute);
   }
 
-  const endpoint = resolveUiEndpoint(url.pathname);
-  if (endpoint === null) {
+  const route = resolveUiRoute(url.pathname);
+  if (route === null) {
     return jsonError(404, "ui_route_not_found", `unknown Foreman UI endpoint '${url.pathname}'`, 2, {
       path: url.pathname
     });
+  }
+
+  const endpoint = await resolveUiEndpoint(request, route);
+  if (endpoint instanceof Response) {
+    return endpoint;
   }
 
   const argv = [...endpoint.argv, "--json"];
@@ -148,7 +158,24 @@ async function handleUiRequest(
   }
 }
 
-function resolveUiEndpoint(pathname: string): UiEndpoint | null {
+async function resolveUiEndpoint(request: Request, route: UiRoute): Promise<UiEndpoint | Response> {
+  if (request.method === "GET" && route.methods.GET !== undefined) {
+    return route.methods.GET();
+  }
+
+  if (request.method === "POST" && route.methods.POST !== undefined) {
+    const body = await readUiJsonBody(request);
+    if (body instanceof Response) {
+      return body;
+    }
+
+    return route.methods.POST(body);
+  }
+
+  return methodNotAllowed(request.method, Object.keys(route.methods).sort());
+}
+
+function resolveUiRoute(pathname: string): UiRoute | null {
   let parts: string[];
   try {
     parts = pathname.split("/").filter(Boolean).map(decodeURIComponent);
@@ -157,55 +184,139 @@ function resolveUiEndpoint(pathname: string): UiEndpoint | null {
   }
 
   if (matches(parts, ["api", "tasks"])) {
-    return { argv: ["task", "list"] };
+    return getRoute(["task", "list"]);
   }
 
   if (matchesPrefix(parts, ["api", "tasks"], 3)) {
-    return { argv: ["task", "show", parts[2]] };
+    return getRoute(["task", "show", parts[2]]);
   }
 
   if (matchesPrefix(parts, ["api", "chunks"], 3)) {
-    return { argv: ["chunk", "list", parts[2]] };
+    return getRoute(["chunk", "list", parts[2]]);
+  }
+
+  if (matchesPrefix(parts, ["api", "chunks"], 5) && parts[4] === "status") {
+    return postRoute((body) =>
+      stringFieldCommand(body, "status", (status) => ["chunk", "status", `${parts[2]}/${parts[3]}`, status.trim()])
+    );
+  }
+
+  if (matchesPrefix(parts, ["api", "chunks"], 5) && parts[4] === "stage") {
+    return postRoute((body) =>
+      stringFieldCommand(body, "stage", (stage) => ["chunk", "stage", `${parts[2]}/${parts[3]}`, stage.trim()])
+    );
+  }
+
+  if (matchesPrefix(parts, ["api", "chunks"], 5) && parts[4] === "notes") {
+    return postRoute((body) =>
+      stringFieldCommand(body, "body", (noteBody) => ["chunk", "note", `${parts[2]}/${parts[3]}`, noteBody])
+    );
   }
 
   if (matchesPrefix(parts, ["api", "readiness"], 4)) {
-    return { argv: ["chunk", "ready", `${parts[2]}/${parts[3]}`] };
+    return getRoute(["chunk", "ready", `${parts[2]}/${parts[3]}`]);
   }
 
   if (matchesPrefix(parts, ["api", "questions"], 4)) {
-    return { argv: ["question", "list", `${parts[2]}/${parts[3]}`] };
+    return {
+      methods: {
+        GET: () => ({ argv: ["question", "list", `${parts[2]}/${parts[3]}`] }),
+        POST: (body) => stringFieldCommand(body, "body", (questionBody) => ["question", "add", `${parts[2]}/${parts[3]}`, questionBody])
+      }
+    };
+  }
+
+  if (matchesPrefix(parts, ["api", "questions"], 6) && parts[5] === "answer") {
+    return postRoute((body) =>
+      stringFieldCommand(body, "answer", (answer) => ["question", "answer", `${parts[2]}/${parts[3]}`, parts[4], answer])
+    );
   }
 
   if (matchesPrefix(parts, ["api", "decisions"], 4)) {
-    return { argv: ["decision", "list", `${parts[2]}/${parts[3]}`] };
+    return {
+      methods: {
+        GET: () => ({ argv: ["decision", "list", `${parts[2]}/${parts[3]}`] }),
+        POST: (body) => stringFieldCommand(body, "body", (decisionBody) => ["decision", "add", `${parts[2]}/${parts[3]}`, decisionBody])
+      }
+    };
   }
 
   if ((parts.length === 3 || parts.length === 4) && matchesPrefix(parts, ["api", "reviews"], parts.length)) {
     const ref = parts.length === 3 ? parts[2] : `${parts[2]}/${parts[3]}`;
-    return { argv: ["review", ref] };
+    return getRoute(["review", ref]);
   }
 
   if (matches(parts, ["api", "dispatch-runs"])) {
-    return { argv: ["dispatch", "list"] };
+    return getRoute(["dispatch", "list"]);
   }
 
   if (matchesPrefix(parts, ["api", "dispatch-runs"], 3)) {
-    return { argv: ["dispatch", "show", parts[2]] };
+    return getRoute(["dispatch", "show", parts[2]]);
   }
 
   if (matches(parts, ["api", "sessions"])) {
-    return { argv: ["session", "list"] };
+    return getRoute(["session", "list"]);
   }
 
   if (matchesPrefix(parts, ["api", "sessions"], 3)) {
-    return { argv: ["session", "show", parts[2]] };
+    return getRoute(["session", "show", parts[2]]);
   }
 
   if (matches(parts, ["api", "costs"])) {
-    return { argv: ["session", "cost"] };
+    return getRoute(["session", "cost"]);
   }
 
   return null;
+}
+
+function getRoute(argv: string[]): UiRoute {
+  return { methods: { GET: () => ({ argv }) } };
+}
+
+function postRoute(builder: (body: Record<string, unknown>) => UiEndpoint | Response): UiRoute {
+  return { methods: { POST: builder } };
+}
+
+function stringFieldCommand(
+  body: Record<string, unknown>,
+  field: string,
+  buildArgv: (value: string) => string[]
+): UiEndpoint | Response {
+  const value = body[field];
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return jsonError(400, "ui_invalid_request_body", `request body must include a non-empty string '${field}' field`, 2, {
+      field
+    });
+  }
+
+  return { argv: buildArgv(value) };
+}
+
+async function readUiJsonBody(request: Request): Promise<Record<string, unknown> | Response> {
+  const text = await request.text();
+  if (text.length > 65536) {
+    return jsonError(413, "ui_request_body_too_large", "request body is too large.", 2);
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return jsonError(400, "ui_invalid_request_body", "request body must be a JSON object.", 2);
+  }
+
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return jsonError(400, "ui_invalid_request_body", "request body must be a JSON object.", 2);
+  }
+
+  return parsed as Record<string, unknown>;
+}
+
+function methodNotAllowed(method: string, allowedMethods: string[]): Response {
+  return jsonError(405, "ui_method_not_allowed", "Foreman UI endpoint does not allow this method.", 2, {
+    method,
+    allowed_methods: allowedMethods
+  });
 }
 
 function matches(parts: string[], expected: string[]): boolean {

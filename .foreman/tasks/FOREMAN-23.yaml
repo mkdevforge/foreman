@@ -1,0 +1,121 @@
+schema_version: 1
+id: FOREMAN-23
+title: Local UI write controls
+source_ref: docs/backlog/future-dispatch-human-gates.md#ui-direction
+description: Add narrow local UI mutation flows on top of existing Foreman CLI JSON contracts.
+status: doing
+created_at: 2026-05-18T14:26:55.569Z
+updated_at: 2026-05-18T14:32:05.885Z
+chunks:
+  - id: ui-write-bridge
+    title: UI write bridge
+    spec: >
+      Add the first safe write bridge for local UI controls.
+
+
+      Scope:
+
+      - Extend the existing Foreman UI HTTP server with narrow POST endpoints backed by allowlisted
+      existing CLI commands.
+
+      - Keep the CLI as the mutation boundary; the UI server must not write task YAML or SQLite
+      directly.
+
+      - Initial POST endpoints:
+        - chunk status update
+        - chunk stage update
+        - chunk note append
+        - question add
+        - question answer
+        - decision add
+      - Each endpoint accepts a small JSON object with the specific required string field and
+      rejects malformed or empty bodies before running a CLI command.
+
+      - Append `--json` to every proxied write command and return the command JSON response.
+
+      - Preserve stable endpoint errors for invalid method, route, body, command failure, and
+      invalid command JSON.
+
+      - Do not add browser controls, dispatch start/cancel/finish/reconcile controls, merge/cleanup
+      controls, hook install controls, Git push/pull, auth, or direct SQLite/YAML mutations in this
+      chunk.
+
+
+      Expected outcome:
+
+      - Future browser controls have a tested, explicit local POST bridge for the lowest-risk
+      Foreman mutations.
+
+      - The bridge remains auditable and small because every write maps to one existing CLI command.
+    status: review
+    stage: implement
+    created_at: 2026-05-18T14:26:55.630Z
+    updated_at: 2026-05-18T14:32:05.885Z
+    notes:
+      - ts: 2026-05-18T14:32:05.828Z
+        body: Implemented the local UI write bridge as explicit POST routes backed by allowlisted existing
+          CLI JSON commands for chunk status/stage/notes, question add/answer, and decision add.
+          Added request-body validation, method handling, command failure/invalid-JSON tests, and
+          README documentation. Verified build, focused UI server tests, and full suite.
+  - id: ui-basic-controls
+    title: Basic UI task controls
+    spec: >
+      Add browser controls for the low-risk write bridge.
+
+
+      Scope:
+
+      - Add compact controls to task/chunk detail views for chunk status, chunk stage, notes,
+      questions, question answers, and decisions.
+
+      - Refresh affected read-only panels after successful writes.
+
+      - Show pending, success, and command-error states without optimistic hidden mutation.
+
+      - Keep controls dense and suitable for a local operational tool.
+
+      - Do not add dispatch lifecycle, merge, cleanup, reconcile, hook install, auth, or remote
+      hosting controls in this chunk.
+
+
+      Expected outcome:
+
+      - A human can manage day-to-day task metadata from the local UI without leaving the existing
+      CLI-backed contract.
+    status: todo
+    stage: discovery
+    created_at: 2026-05-18T14:26:55.690Z
+    updated_at: 2026-05-18T14:26:55.690Z
+    notes: []
+  - id: ui-dispatch-controls
+    title: Dispatch UI controls
+    spec: >
+      Add first dispatch lifecycle controls after the basic write bridge is proven.
+
+
+      Scope:
+
+      - Add local UI controls for dispatch start, cancel, finish, reconcile, workspace inspection,
+      and diff display where the existing CLI JSON contracts are sufficient.
+
+      - Require explicit confirmation for side-effecting lifecycle actions that can launch agents,
+      mark terminal state, merge, or remove worktrees.
+
+      - Keep merge and cleanup visibly separate from normal dispatch start/finish controls.
+
+      - Preserve the existing dispatch audit trail and use CLI commands rather than direct SQLite
+      writes.
+
+      - Do not introduce autonomous scheduling, tracker polling, daemon-only state, remote hosting,
+      or multi-user auth in this chunk.
+
+
+      Expected outcome:
+
+      - The local UI becomes a practical control surface for explicit dispatch operations while
+      preserving Foreman's current audit and recovery model.
+    status: todo
+    stage: discovery
+    created_at: 2026-05-18T14:26:55.748Z
+    updated_at: 2026-05-18T14:26:55.748Z
+    notes: []
