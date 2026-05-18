@@ -1,0 +1,316 @@
+@import "tailwindcss";
+
+@source "./index.html";
+@source "./app.js";
+
+@layer base {
+  html {
+    @apply bg-neutral-50 text-neutral-950;
+  }
+
+  body {
+    @apply m-0 min-w-80 font-sans antialiased;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+}
+
+@layer components {
+  .app-shell {
+    @apply grid min-h-screen grid-rows-[auto_minmax(0,1fr)] bg-neutral-50 text-neutral-950;
+  }
+
+  .topbar {
+    @apply flex min-h-16 items-center justify-between gap-4 border-b border-neutral-200 bg-neutral-100 px-5 py-3;
+  }
+
+  .brand-block {
+    @apply min-w-0;
+  }
+
+  .brand-kicker {
+    @apply m-0 text-xs uppercase leading-tight text-neutral-500;
+    letter-spacing: 0;
+  }
+
+  .page-title {
+    @apply m-0 text-[21px] font-bold leading-tight;
+    letter-spacing: 0;
+  }
+
+  .topbar-actions {
+    @apply flex shrink-0 items-center gap-2;
+  }
+
+  .load-pill {
+    @apply inline-flex min-h-7 items-center rounded-full border border-neutral-300 bg-neutral-50 px-3 text-xs font-medium text-neutral-600;
+  }
+
+  .load-pill-ok {
+    @apply border-emerald-200 bg-emerald-50 text-emerald-700;
+  }
+
+  .load-pill-warn {
+    @apply border-amber-200 bg-amber-50 text-amber-700;
+  }
+
+  .load-pill-stale {
+    @apply border-slate-300 bg-slate-100 text-slate-700;
+  }
+
+  .button-secondary {
+    @apply inline-flex min-h-8 items-center justify-center rounded-md border border-neutral-300 bg-white px-3 text-sm font-medium text-neutral-800 shadow-sm hover:bg-neutral-50 focus:outline-none focus:ring-2 focus:ring-blue-500;
+  }
+
+  .layout {
+    @apply grid min-h-0 grid-cols-[248px_minmax(0,1fr)];
+  }
+
+  .rail {
+    @apply overflow-auto border-r border-neutral-200 bg-neutral-100 px-4 py-5;
+  }
+
+  .rail-title {
+    @apply mb-3 mt-0 text-xs uppercase leading-tight text-neutral-500;
+    letter-spacing: 0;
+  }
+
+  .rail-list {
+    @apply m-0 grid list-none gap-1 p-0;
+  }
+
+  .rail-list li {
+    @apply flex min-h-9 items-center justify-between gap-3 border-b border-neutral-200 text-sm text-neutral-600;
+  }
+
+  .rail-list strong {
+    @apply text-neutral-950;
+  }
+
+  .content {
+    @apply min-w-0 overflow-auto px-5 py-5 pb-8;
+  }
+
+  .metric-grid {
+    @apply mb-4 grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3;
+  }
+
+  .metric-card {
+    @apply grid min-h-24 content-between gap-2 rounded-lg border border-neutral-200 bg-white p-4 shadow-sm;
+  }
+
+  .metric-label {
+    @apply text-xs leading-tight text-neutral-500;
+  }
+
+  .metric-value {
+    @apply text-[28px] font-bold leading-none;
+    letter-spacing: 0;
+  }
+
+  .metric-note {
+    @apply min-h-4 text-xs leading-snug text-neutral-500;
+  }
+
+  .toolbar {
+    @apply mb-4 grid gap-3 rounded-lg border border-neutral-200 bg-white p-3 shadow-sm;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  }
+
+  .field {
+    @apply grid gap-1 text-xs font-medium leading-tight text-neutral-500;
+  }
+
+  .field-wide {
+    @apply min-w-0;
+    grid-column: span 2;
+  }
+
+  .input-control,
+  .select-control {
+    @apply min-h-9 w-full rounded-md border border-neutral-300 bg-white px-3 text-sm font-medium text-neutral-900 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25;
+  }
+
+  .work-grid {
+    @apply grid grid-cols-[minmax(0,1.35fr)_minmax(340px,0.85fr)] items-start gap-4;
+  }
+
+  .stack {
+    @apply grid gap-4;
+  }
+
+  .data-panel {
+    @apply min-w-0 overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm;
+  }
+
+  .panel-head {
+    @apply flex items-center justify-between gap-3 border-b border-neutral-200 bg-neutral-100 px-4 py-3;
+  }
+
+  .panel-title {
+    @apply m-0 text-base font-bold leading-tight;
+    letter-spacing: 0;
+  }
+
+  .panel-meta {
+    @apply whitespace-nowrap text-xs text-neutral-500;
+  }
+
+  .table-scroll {
+    @apply overflow-x-auto;
+  }
+
+  .data-table {
+    @apply w-full min-w-[680px] border-collapse text-sm;
+  }
+
+  .data-table th,
+  .data-table td {
+    @apply border-b border-neutral-100 px-4 py-3 text-left align-top;
+  }
+
+  .data-table th {
+    @apply bg-neutral-50 text-xs font-semibold text-neutral-500;
+  }
+
+  .data-table tr:last-child td {
+    @apply border-b-0;
+  }
+
+  .table-head-button {
+    @apply -ml-1 inline-flex min-h-7 items-center rounded px-1 text-left text-xs font-semibold text-neutral-600 hover:bg-neutral-200 focus:outline-none focus:ring-2 focus:ring-blue-500;
+  }
+
+  .table-state,
+  .panel-state {
+    @apply px-4 py-5 text-sm leading-relaxed text-neutral-500;
+  }
+
+  .state-error {
+    @apply bg-red-50 text-red-700;
+  }
+
+  .item-title {
+    @apply flex min-w-0 flex-wrap items-baseline gap-2 font-semibold leading-snug text-neutral-950;
+  }
+
+  .item-id {
+    @apply font-mono text-xs font-bold text-blue-700;
+  }
+
+  .item-copy {
+    @apply mt-1 max-w-[62rem] text-xs leading-relaxed text-neutral-600;
+    overflow-wrap: anywhere;
+  }
+
+  .meta-line {
+    @apply mt-2 flex flex-wrap gap-1.5;
+  }
+
+  .rows {
+    @apply grid;
+  }
+
+  .row-card {
+    @apply grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-neutral-100 px-4 py-3 last:border-b-0;
+  }
+
+  .chips {
+    @apply flex max-w-56 flex-wrap content-start justify-end gap-1.5;
+  }
+
+  .chip {
+    @apply inline-flex min-h-6 items-center whitespace-nowrap rounded-full border border-neutral-300 bg-neutral-50 px-2 text-[11px] font-medium leading-tight text-neutral-600;
+  }
+
+  .chip-active {
+    @apply border-blue-200 bg-blue-50 text-blue-700;
+  }
+
+  .chip-done {
+    @apply border-emerald-200 bg-emerald-50 text-emerald-700;
+  }
+
+  .chip-warn {
+    @apply border-amber-200 bg-amber-50 text-amber-700;
+  }
+
+  .chip-failed {
+    @apply border-red-200 bg-red-50 text-red-700;
+  }
+
+  .chip-muted {
+    @apply border-neutral-300 bg-neutral-50 text-neutral-600;
+  }
+
+  .mono {
+    @apply font-mono text-xs;
+  }
+
+  @media (max-width: 1120px) {
+    .toolbar {
+      @apply grid-cols-3;
+    }
+
+    .field-wide {
+      @apply col-span-3;
+    }
+
+    .work-grid {
+      @apply grid-cols-1;
+    }
+  }
+
+  @media (max-width: 820px) {
+    .layout {
+      @apply grid-cols-1;
+    }
+
+    .rail {
+      @apply border-r-0 border-b;
+    }
+  }
+
+  @media (max-width: 620px) {
+    .topbar {
+      @apply items-start;
+    }
+
+    .topbar-actions {
+      @apply flex-col items-end;
+    }
+
+    .content {
+      @apply px-3 py-4;
+    }
+
+    .rail {
+      @apply px-3 py-4;
+    }
+
+    .metric-grid {
+      @apply grid-cols-2;
+    }
+
+    .toolbar {
+      @apply grid-cols-1;
+    }
+
+    .field-wide {
+      @apply col-span-1;
+    }
+
+    .row-card {
+      @apply grid-cols-1;
+    }
+
+    .chips {
+      @apply max-w-none justify-start;
+    }
+  }
+}

@@ -5,7 +5,7 @@ source_ref: docs/dispatch-run-model.md#ui-contract
 description: Build the first read-only local Foreman UI on top of existing CLI JSON contracts.
 status: todo
 created_at: 2026-05-17T23:38:18.700Z
-updated_at: 2026-05-18T08:14:40.833Z
+updated_at: 2026-05-18T09:37:07.326Z
 chunks:
   - id: ui-readonly-server
     title: Read-only UI server
@@ -92,11 +92,16 @@ chunks:
       - A human can open the local UI and understand what work exists, what is blocked, what is
         running, and what needs review without running multiple CLI commands.
       - The UI respects the repo-vs-local-state boundary documented in `docs/dispatch-run-model.md`.
-    status: todo
-    stage: plan
+    status: done
+    stage: implement
     created_at: 2026-05-17T23:38:18.803Z
-    updated_at: 2026-05-17T23:39:05.187Z
-    notes: []
+    updated_at: 2026-05-18T09:37:07.326Z
+    notes:
+      - ts: 2026-05-18T09:37:07.326Z
+        body: Implemented the overview dashboard with Tailwind CSS v4 assets, maintainable HTML/CSS/JS
+          files, filters for task/chunk/stage/readiness/dispatch/tool/search, readiness checks,
+          loading/empty/error/malformed/stale states, sortable chunk and dispatch tables, and a
+          behavior-level Playwright smoke without screenshot baselines.
   - id: ui-detail-views
     title: Detail views
     spec: |

@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Foreman</title>
+  <link rel="stylesheet" href="/ui.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand-block">
+        <p class="brand-kicker">Foreman</p>
+        <h1 class="page-title">Work Backlog</h1>
+      </div>
+      <div class="topbar-actions">
+        <span class="load-pill" id="load-state" data-testid="load-state">Loading</span>
+        <button class="button-secondary" id="refresh-button" type="button">Refresh</button>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside class="rail" aria-label="Summary">
+        <p class="rail-title">Current State</p>
+        <ul class="rail-list">
+          <li><span>Tasks</span><strong id="rail-tasks">0</strong></li>
+          <li><span>Open chunks</span><strong id="rail-open-chunks">0</strong></li>
+          <li><span>Blocked chunks</span><strong id="rail-blocked-chunks">0</strong></li>
+          <li><span>Dispatch runs</span><strong id="rail-dispatch">0</strong></li>
+          <li><span>Sessions</span><strong id="rail-sessions">0</strong></li>
+          <li><span>Estimated cost</span><strong id="rail-cost">$0.00</strong></li>
+        </ul>
+      </aside>
+
+      <main class="content">
+        <section class="metric-grid" aria-label="Overview metrics">
+          <article class="metric-card">
+            <div class="metric-label">Tasks</div>
+            <div class="metric-value" id="metric-tasks">0</div>
+            <div class="metric-note" id="metric-tasks-note"></div>
+          </article>
+          <article class="metric-card">
+            <div class="metric-label">Open Chunks</div>
+            <div class="metric-value" id="metric-open-chunks">0</div>
+            <div class="metric-note" id="metric-open-note"></div>
+          </article>
+          <article class="metric-card">
+            <div class="metric-label">Blocked Chunks</div>
+            <div class="metric-value" id="metric-blocked-chunks">0</div>
+            <div class="metric-note" id="metric-blocked-note"></div>
+          </article>
+          <article class="metric-card">
+            <div class="metric-label">Dispatch Runs</div>
+            <div class="metric-value" id="metric-dispatch">0</div>
+            <div class="metric-note" id="metric-dispatch-note"></div>
+          </article>
+          <article class="metric-card">
+            <div class="metric-label">Sessions</div>
+            <div class="metric-value" id="metric-sessions">0</div>
+            <div class="metric-note" id="metric-sessions-note"></div>
+          </article>
+          <article class="metric-card">
+            <div class="metric-label">Cost</div>
+            <div class="metric-value" id="metric-cost">$0.00</div>
+            <div class="metric-note" id="metric-cost-note"></div>
+          </article>
+        </section>
+
+        <section class="toolbar" aria-label="Overview filters">
+          <label class="field field-wide">
+            <span>Search</span>
+            <input class="input-control" id="filter-search" type="search" autocomplete="off" placeholder="Task, chunk, session, run">
+          </label>
+          <label class="field">
+            <span>Task status</span>
+            <select class="select-control" id="filter-task-status"></select>
+          </label>
+          <label class="field">
+            <span>Chunk status</span>
+            <select class="select-control" id="filter-chunk-status"></select>
+          </label>
+          <label class="field">
+            <span>Stage</span>
+            <select class="select-control" id="filter-stage"></select>
+          </label>
+          <label class="field">
+            <span>Readiness</span>
+            <select class="select-control" id="filter-readiness">
+              <option value="all">All readiness</option>
+              <option value="ready">Ready</option>
+              <option value="blocked">Blocked</option>
+              <option value="checking">Checking</option>
+              <option value="error">Error</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Dispatch status</span>
+            <select class="select-control" id="filter-dispatch-status"></select>
+          </label>
+          <label class="field">
+            <span>Tool</span>
+            <select class="select-control" id="filter-tool"></select>
+          </label>
+        </section>
+
+        <section class="work-grid">
+          <div class="stack">
+            <section class="data-panel" data-endpoint="/api/tasks">
+              <div class="panel-head">
+                <h2 class="panel-title">Chunks</h2>
+                <span class="panel-meta" id="chunks-meta">0 chunks</span>
+              </div>
+              <div class="table-scroll">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th><button class="table-head-button" type="button" data-sort-work="ref">Chunk</button></th>
+                      <th>Status</th>
+                      <th><button class="table-head-button" type="button" data-sort-work="readiness">Readiness</button></th>
+                      <th><button class="table-head-button" type="button" data-sort-work="updated">Updated</button></th>
+                    </tr>
+                  </thead>
+                  <tbody id="chunk-rows">
+                    <tr><td class="table-state" colspan="4">Loading</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="data-panel" data-endpoint="/api/dispatch-runs">
+              <div class="panel-head">
+                <h2 class="panel-title">Dispatch Runs</h2>
+                <span class="panel-meta" id="dispatch-meta">0 runs</span>
+              </div>
+              <div class="table-scroll">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th><button class="table-head-button" type="button" data-sort-dispatch="ref">Run</button></th>
+                      <th>Status</th>
+                      <th>Tool</th>
+                      <th><button class="table-head-button" type="button" data-sort-dispatch="updated">Updated</button></th>
+                    </tr>
+                  </thead>
+                  <tbody id="dispatch-rows">
+                    <tr><td class="table-state" colspan="4">Loading</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+
+          <div class="stack">
+            <section class="data-panel" data-endpoint="/api/sessions">
+              <div class="panel-head">
+                <h2 class="panel-title">Recent Sessions</h2>
+                <span class="panel-meta" id="sessions-meta">0 sessions</span>
+              </div>
+              <div class="rows" id="session-rows"><div class="panel-state">Loading</div></div>
+            </section>
+
+            <section class="data-panel" data-endpoint="/api/costs">
+              <div class="panel-head">
+                <h2 class="panel-title">Cost Groups</h2>
+                <span class="panel-meta" id="cost-meta">$0.00</span>
+              </div>
+              <div id="cost-rows"><div class="panel-state">Loading</div></div>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+</body>
+</html>
