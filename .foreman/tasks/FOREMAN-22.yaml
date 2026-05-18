@@ -3,9 +3,9 @@ id: FOREMAN-22
 title: Local UI foundation
 source_ref: docs/dispatch-run-model.md#ui-contract
 description: Build the first read-only local Foreman UI on top of existing CLI JSON contracts.
-status: todo
+status: done
 created_at: 2026-05-17T23:38:18.700Z
-updated_at: 2026-05-18T13:55:35.975Z
+updated_at: 2026-05-18T14:23:46.179Z
 chunks:
   - id: ui-readonly-server
     title: Read-only UI server
