@@ -118,17 +118,33 @@
   }
 
   .toolbar {
-    @apply mb-4 grid gap-3 rounded-lg border border-neutral-200 bg-white p-3 shadow-sm;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    @apply mb-4 grid grid-cols-[minmax(0,1.45fr)_minmax(280px,0.55fr)] gap-4 rounded-lg border border-neutral-200 bg-white p-3 shadow-sm;
+  }
+
+  .field-search {
+    @apply col-span-2;
+  }
+
+  .filter-section {
+    @apply grid gap-2;
+  }
+
+  .filter-section-title {
+    @apply m-0 text-xs font-semibold uppercase leading-tight text-neutral-500;
+    letter-spacing: 0;
+  }
+
+  .filter-controls {
+    @apply grid gap-3;
+    grid-template-columns: repeat(auto-fit, minmax(136px, 1fr));
+  }
+
+  .filter-controls-dispatch {
+    @apply grid-cols-2;
   }
 
   .field {
     @apply grid gap-1 text-xs font-medium leading-tight text-neutral-500;
-  }
-
-  .field-wide {
-    @apply min-w-0;
-    grid-column: span 2;
   }
 
   .input-control,
@@ -254,11 +270,7 @@
 
   @media (max-width: 1120px) {
     .toolbar {
-      @apply grid-cols-3;
-    }
-
-    .field-wide {
-      @apply col-span-3;
+      @apply grid-cols-1;
     }
 
     .work-grid {
@@ -301,8 +313,13 @@
       @apply grid-cols-1;
     }
 
-    .field-wide {
+    .field-search {
       @apply col-span-1;
+    }
+
+    .filter-controls,
+    .filter-controls-dispatch {
+      @apply grid-cols-1;
     }
 
     .row-card {

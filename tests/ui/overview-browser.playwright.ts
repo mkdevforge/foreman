@@ -46,7 +46,13 @@ test("renders overview data and filters without screenshot baselines", async ({ 
   await expect(page.locator("#chunk-rows")).not.toContainText("TASK-1/ready-chunk");
 
   await page.locator("#filter-readiness").selectOption("all");
-  await page.locator("#filter-dispatch-status").selectOption("failed");
+  await page.locator("#filter-dispatch-status").evaluate((select) => {
+    if (!(select instanceof HTMLSelectElement)) {
+      throw new Error("expected dispatch status filter to be a select");
+    }
+    select.value = "failed";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
   await expect(page.locator("#dispatch-rows")).toContainText("TASK-2/done-chunk");
   await expect(page.locator("#dispatch-rows")).not.toContainText("TASK-1/blocked-chunk");
 

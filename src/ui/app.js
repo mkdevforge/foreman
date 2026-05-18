@@ -63,10 +63,12 @@ function bindControls() {
 
 function bindFilter(id, key) {
   const element = byId(id);
-  element?.addEventListener("input", () => {
+  const update = () => {
     state.filters[key] = element.value;
     render();
-  });
+  };
+  element?.addEventListener("input", update);
+  element?.addEventListener("change", update);
 }
 
 async function loadForemanData() {

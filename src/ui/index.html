@@ -68,40 +68,50 @@
         </section>
 
         <section class="toolbar" aria-label="Overview filters">
-          <label class="field field-wide">
-            <span>Search</span>
+          <label class="field field-search">
+            <span>Global search</span>
             <input class="input-control" id="filter-search" type="search" autocomplete="off" placeholder="Task, chunk, session, run">
           </label>
-          <label class="field">
-            <span>Task status</span>
-            <select class="select-control" id="filter-task-status"></select>
-          </label>
-          <label class="field">
-            <span>Chunk status</span>
-            <select class="select-control" id="filter-chunk-status"></select>
-          </label>
-          <label class="field">
-            <span>Stage</span>
-            <select class="select-control" id="filter-stage"></select>
-          </label>
-          <label class="field">
-            <span>Readiness</span>
-            <select class="select-control" id="filter-readiness">
-              <option value="all">All readiness</option>
-              <option value="ready">Ready</option>
-              <option value="blocked">Blocked</option>
-              <option value="checking">Checking</option>
-              <option value="error">Error</option>
-            </select>
-          </label>
-          <label class="field">
-            <span>Dispatch status</span>
-            <select class="select-control" id="filter-dispatch-status"></select>
-          </label>
-          <label class="field">
-            <span>Tool</span>
-            <select class="select-control" id="filter-tool"></select>
-          </label>
+          <div class="filter-section">
+            <p class="filter-section-title">Work Filters</p>
+            <div class="filter-controls">
+              <label class="field">
+                <span>Task status</span>
+                <select class="select-control" id="filter-task-status"></select>
+              </label>
+              <label class="field">
+                <span>Chunk status</span>
+                <select class="select-control" id="filter-chunk-status"></select>
+              </label>
+              <label class="field">
+                <span>Stage</span>
+                <select class="select-control" id="filter-stage"></select>
+              </label>
+              <label class="field">
+                <span>Readiness</span>
+                <select class="select-control" id="filter-readiness">
+                  <option value="all">All readiness</option>
+                  <option value="ready">Ready</option>
+                  <option value="blocked">Blocked</option>
+                  <option value="checking">Checking</option>
+                  <option value="error">Error</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          <div class="filter-section filter-section-dispatch">
+            <p class="filter-section-title">Dispatch Filters</p>
+            <div class="filter-controls filter-controls-dispatch">
+              <label class="field">
+                <span>Dispatch status</span>
+                <select class="select-control" id="filter-dispatch-status"></select>
+              </label>
+              <label class="field">
+                <span>Tool</span>
+                <select class="select-control" id="filter-tool"></select>
+              </label>
+            </div>
+          </div>
         </section>
 
         <section class="work-grid">
